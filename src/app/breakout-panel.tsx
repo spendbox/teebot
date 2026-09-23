@@ -1,7 +1,27 @@
 import { breakoutStats } from "@/lib/breakout/bot";
 import { THRESHOLDS, leverageFor } from "@/lib/breakout/strategy";
-import { db, type Settings } from "@/lib/db";
+import { getKlines } from "@/lib/bybit";
+import { db, type Position, type Settings } from "@/lib/db";
+import { TodayChart, TrendChart } from "./price-chart";
 import { price } from "./ui";
+
+const DAY = 86_400_000;
+
+async function chartData(dayStart: number) {
+  const [m15, daily] = await Promise.all([
+    getKlines("BTCUSDT", "15", 100, undefined, "linear").catch(() => []),
+    getKlines("BTCUSDT", "D", 85, undefined, "linear").catch(() => []),
+  ]);
+  const now = Date.now();
+  // Each 15-minute candle is plotted at its closing time (the latest one at "now").
+  const today = m15.filter((k) => k.t >= dayStart).map((k) => ({ t: Math.min(k.t + 15 * 60_000, now), v: k.c }));
+  const done = daily.filter((k) => k.t < dayStart);
+  const trend = done
+    .map((k, i) => (i >= 19 ? { t: k.t, close: k.c, avg: done.slice(i - 19, i + 1).reduce((s, d) => s + d.c, 0) / 20 } : null))
+    .filter((p): p is { t: number; close: number; avg: number } => p !== null)
+    .slice(-60);
+  return { today, trend };
+}
 
 interface PlanRow {
   day: string;
@@ -26,11 +46,13 @@ const STATUS: Record<string, { text: string; tone: string }> = {
   "skipped-too-small": { text: "Skipped: account too small", tone: "bad" },
 };
 
-export async function BreakoutPanel({ settings, equity }: { settings: Settings; equity: number | null }) {
+export async function BreakoutPanel({ settings, equity, openTrade }: { settings: Settings; equity: number | null; openTrade?: Position }) {
   const today = new Date().toISOString().slice(0, 10);
-  const [{ data }, stats] = await Promise.all([
+  const dayStart = Math.floor(Date.now() / DAY) * DAY;
+  const [{ data }, stats, charts] = await Promise.all([
     db().from("day_plans").select("*").eq("mode", settings.mode).order("day", { ascending: false }).limit(7),
     breakoutStats(settings.mode),
+    chartData(dayStart),
   ]);
   const plans = (data ?? []) as PlanRow[];
   const plan = plans.find((p) => p.day === today);
@@ -92,6 +114,27 @@ export async function BreakoutPanel({ settings, equity }: { settings: Settings; 
               </div>
             ) : null}
 
+            {charts.today.length > 1 && (plan.eligible || openTrade) && (
+              <>
+                <TodayChart
+                  points={charts.today}
+                  dayStart={dayStart}
+                  open={plan.open}
+                  trigger={plan.trigger}
+                  entry={openTrade?.entry_price ?? null}
+                  stop={openTrade?.stop_price ?? null}
+                  showGap={waiting}
+                />
+                <p className="explain">
+                  {openTrade
+                    ? `The bot bought at the green line. If the price falls to the red line (5% lower), it sells straight away to limit the loss. Otherwise it sells before midnight UTC.`
+                    : waiting
+                      ? `The black line is Bitcoin's price today. The bot buys only if it climbs up to the blue "Buys at" line${distance != null && distance > 0 ? ` - the shaded bar shows the ${distance.toFixed(2)}% it still has to rise` : ""}. That level is today's opening price plus 70% of yesterday's high-to-low range.`
+                      : `The black line is Bitcoin's price today; the blue line is where the bot would have bought.`}
+                </p>
+              </>
+            )}
+
             {score != null && plan.eligible && (
               <div className="score">
                 <div className="n">{score}/7</div>
@@ -115,6 +158,24 @@ export async function BreakoutPanel({ settings, equity }: { settings: Settings; 
           </>
         )}
       </section>
+
+      {charts.trend.length > 1 && (
+        <section className="card">
+          <div className="card-head">
+            <h2>Uptrend check · last 60 days</h2>
+            <span className={`chip ${plan?.eligible ? "good" : "bad"}`}>{plan?.eligible ? "Uptrend: can trade" : "No uptrend: no trades"}</span>
+          </div>
+          <TrendChart points={charts.trend} />
+          <p className="explain">
+            The bot only trades on days after Bitcoin closed <strong>above</strong> its 20-day average (blue line above the grey line).
+            {(() => {
+              const last = charts.trend[charts.trend.length - 1];
+              const pct = (last.close / last.avg - 1) * 100;
+              return ` Yesterday it closed ${Math.abs(pct).toFixed(1)}% ${pct >= 0 ? "above" : "below"} the average.`;
+            })()}
+          </p>
+        </section>
+      )}
 
       <div className="stats">
         <div className="card stat">

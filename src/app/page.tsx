@@ -119,7 +119,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
             </div>
           </section>
 
-          {breakout && <BreakoutPanel settings={s} equity={equity} />}
+          {breakout && <BreakoutPanel settings={s} equity={equity} openTrade={open[0]} />}
 
           {!breakout && (
             <div className="coins">
