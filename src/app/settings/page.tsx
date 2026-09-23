@@ -1,9 +1,7 @@
 import { getSettings } from "@/lib/db";
 import { PROFILES } from "@/lib/engine/profiles";
-import { aiAvailable } from "@/lib/ai";
-import { MIN_CONFIDENCE } from "@/lib/ai-gate";
-import { connectTelegram, resetPaper, resetPeak, resetSafety, saveAiSettings, saveSettings, saveStrategy, setMode, testBybit } from "../actions";
-import { Message, Nav } from "../ui";
+import { connectTelegram, resetPaper, resetPeak, resetSafety, saveSettings, saveStrategy, setMode, testBybit } from "../actions";
+import { LogoutButton, Message, Nav } from "../ui";
 
 export const dynamic = "force-dynamic";
 
@@ -17,27 +15,35 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
 
   return (
     <>
-      <Nav />
+      <Nav active="settings" />
       <main>
         <Message msg={msg} />
 
         <div className="card">
           <h2>Strategy</h2>
           <form action={saveStrategy}>
+            <label className="option">
+              <input type="radio" name="strategy" value="breakout" defaultChecked={(s.strategy ?? "breakout") === "breakout"} />
+              <span>
+                <strong>Breakout day-trader</strong> <span className="chip accent">Recommended</span>
+                <span className="muted small" style={{ display: "block" }}>
+                  Bitcoin futures, 2x–5x leverage by confidence score, closed by the end of every day
+                </span>
+              </span>
+            </label>
+            <label className="option">
+              <input type="radio" name="strategy" value="classic" defaultChecked={s.strategy === "classic"} />
+              <span>
+                <strong>Classic</strong>
+                <span className="muted small" style={{ display: "block" }}>
+                  The original spot strategy (lost money in long-term tests)
+                </span>
+              </span>
+            </label>
             <p>
-              <label className="check">
-                <input type="radio" name="strategy" value="breakout" defaultChecked={(s.strategy ?? "breakout") === "breakout"} />
-                <strong>Breakout day-trader</strong>&nbsp;(recommended): Bitcoin futures, 2x–5x leverage by confidence score, closed by the end of every day
-              </label>
-            </p>
-            <p>
-              <label className="check">
-                <input type="radio" name="strategy" value="classic" defaultChecked={s.strategy === "classic"} />
-                Classic: the original spot strategy (lost money in long-term tests)
-              </label>
-            </p>
-            <p>
-              Breakout leverage:{" "}
+              <span className="muted small" style={{ display: "block", marginBottom: 6 }}>
+                Breakout leverage
+              </span>
               <select name="breakout_profile" defaultValue={s.breakout_profile ?? "balanced"}>
                 <option value="balanced">Balanced: score 5 → 2x, 6 → 4x, 7 → 5x</option>
                 <option value="safer">Safer: score 5 → 2x, 6–7 → 3x</option>
@@ -79,34 +85,6 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
           <p className="muted">
             Current rules: risks at most {pct(p.riskPerTrade)} of your balance per trade, up to {p.maxOpenPositions} trades at once, stops
             for the day after a {pct(p.dailyLossLimit)} loss, and shuts down completely after a {pct(p.maxDrawdown)} fall from the peak.
-          </p>
-        </div>
-
-        <div className="card">
-          <h2>AI reviewer (Claude Opus 5.5) - Classic strategy only</h2>
-          <p className="muted">The Breakout day-trader doesn&apos;t use the AI. Its rules decide everything, which is what was tested.</p>
-          <p>
-            API key: <strong>{aiAvailable() ? "added" : "missing - add ANTHROPIC_API_KEY in Vercel"}</strong>
-          </p>
-          <form action={saveAiSettings}>
-            <p>
-              <label className="check">
-                <input type="checkbox" name="ai_enabled" defaultChecked={s.ai_enabled} />
-                Ask the AI before every buy
-              </label>
-            </p>
-            <p>
-              Maximum AI reviews per day:{" "}
-              <input name="ai_daily_limit" type="number" min="0" max="24" defaultValue={s.ai_daily_limit} style={{ width: 80 }} />
-            </p>
-            <button className="primary" type="submit">
-              Save
-            </button>
-          </form>
-          <p className="muted">
-            The AI is only asked when the rules already want to buy, at most once per coin per hour. Each review costs roughly 3-8 US cents.
-            It needs {MIN_CONFIDENCE}%+ confidence to allow a trade. If the daily limit is reached or the AI is unavailable, the bot skips the
-            trade to stay safe.
           </p>
         </div>
 
@@ -178,6 +156,10 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
           <p className="muted">
             Press this after moving money in or out of Bybit, otherwise a withdrawal can look like a trading loss and trigger the shutdown.
           </p>
+        </div>
+        <div className="card row-between">
+          <span className="muted">Signed in to your Teebot dashboard</span>
+          <LogoutButton />
         </div>
       </main>
     </>

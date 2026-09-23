@@ -43,16 +43,16 @@ export function LiveBar({ lastTickAt, enabled }: { lastTickAt: string | null; en
   let next = "";
   if (enabled && last) {
     const remaining = last + TICK_MS - now;
-    next = remaining > 0 ? `next check in ${clock(remaining)}` : "checking any moment…";
+    next = remaining > 0 ? `next in ${clock(remaining)}` : "checking…";
   }
 
   return (
     <div className="livebar">
       <span className={`dot ${enabled ? "pulse" : ""}`} aria-hidden />
-      <strong>{enabled ? "Live" : "Paused"}</strong>
-      <span className="muted">
-        {last ? `Last market check ${ago(now - last)}` : "No market check yet"}
-        {next && ` · ${next}`} · page updated {ago(now - loadedAt)}
+      <strong>{enabled ? "Running" : "Stopped"}</strong>
+      <span className="muted" title={`Page refreshed ${ago(now - loadedAt)}`}>
+        {last ? `checked ${ago(now - last)}` : "not checked yet"}
+        {next && ` · ${next}`}
       </span>
     </div>
   );
@@ -93,14 +93,14 @@ export function RunNow() {
   };
 
   return (
-    <div>
-      <button className="primary" onClick={run} disabled={pending}>
+    <>
+      <button onClick={run} disabled={pending}>
         {pending ? (
           <>
             <span className="spinner" aria-hidden /> Checking…
           </>
         ) : (
-          "Check market now"
+          "Check now"
         )}
       </button>
       {pending && <div className="run-panel muted">{STEPS[step]}</div>}
@@ -110,7 +110,7 @@ export function RunNow() {
           <div className="run-head">
             <strong>
               {report.status === "ran"
-                ? `Checked ${report.coins?.length ?? 0} coin${report.coins?.length === 1 ? "" : "s"} just now`
+                ? "Checked just now"
                 : report.status === "busy"
                   ? "The bot is already checking - try again in a moment"
                   : report.status === "error"
@@ -136,7 +136,7 @@ export function RunNow() {
             ))}
         </div>
       )}
-    </div>
+    </>
   );
 }
 

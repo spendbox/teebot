@@ -7,7 +7,7 @@ export const maxDuration = 120;
 export default function BacktestPage() {
   return (
     <>
-      <Nav />
+      <Nav active="backtest" />
       <main>
         <div className="card">
           <h2>Test the Breakout day-trader on past prices</h2>

@@ -1,7 +1,7 @@
 import { breakoutStats } from "@/lib/breakout/bot";
 import { THRESHOLDS, leverageFor } from "@/lib/breakout/strategy";
 import { db, type Settings } from "@/lib/db";
-import { price as fmtPrice } from "./ui";
+import { price } from "./ui";
 
 interface PlanRow {
   day: string;
@@ -17,19 +17,19 @@ interface PlanRow {
   updated_at: string;
 }
 
-const STATUS_TEXT: Record<string, string> = {
-  waiting: "Watching for a breakout",
-  "no-uptrend": "No trade today (no uptrend)",
-  entered: "In a trade",
-  done: "Today's trade is finished",
-  "skipped-low-score": "Skipped (score too low)",
-  "skipped-too-small": "Skipped (account below Bybit minimum)",
+const STATUS: Record<string, { text: string; tone: string }> = {
+  waiting: { text: "Watching for a breakout", tone: "accent" },
+  "no-uptrend": { text: "No trade today", tone: "" },
+  entered: { text: "In a trade", tone: "good" },
+  done: { text: "Done for today", tone: "" },
+  "skipped-low-score": { text: "Skipped: score too low", tone: "" },
+  "skipped-too-small": { text: "Skipped: account too small", tone: "bad" },
 };
 
 export async function BreakoutPanel({ settings, equity }: { settings: Settings; equity: number | null }) {
   const today = new Date().toISOString().slice(0, 10);
   const [{ data }, stats] = await Promise.all([
-    db().from("day_plans").select("*").eq("mode", settings.mode).order("day", { ascending: false }).limit(8),
+    db().from("day_plans").select("*").eq("mode", settings.mode).order("day", { ascending: false }).limit(7),
     breakoutStats(settings.mode),
   ]);
   const plans = (data ?? []) as PlanRow[];
@@ -37,105 +37,125 @@ export async function BreakoutPanel({ settings, equity }: { settings: Settings; 
   const profile = settings.breakout_profile ?? "balanced";
   const hourNow = new Date().getUTCHours();
   const clues = plan?.clues ?? [];
-  const knownMet = clues.filter((c) => c.met).length;
-  const ifNow = plan?.status === "waiting" ? knownMet + (hourNow < THRESHOLDS.hour ? 1 : 0) : plan?.score ?? null;
+  const waiting = plan?.status === "waiting";
+  const earlyClue = { label: `Breakout before ${THRESHOLDS.hour}:00 UTC`, met: hourNow < THRESHOLDS.hour };
+  const shownClues = waiting ? [...clues, earlyClue] : clues;
+  const score = waiting ? shownClues.filter((c) => c.met).length : plan?.score ?? null;
+  const lev = score != null ? leverageFor(score, profile) : 0;
+  const progress =
+    plan?.trigger && plan.price && plan.open && plan.trigger > plan.open
+      ? Math.max(0, Math.min(1, (plan.price - plan.open) / (plan.trigger - plan.open)))
+      : null;
   const distance = plan?.trigger && plan?.price ? (plan.trigger / plan.price - 1) * 100 : null;
-  const belowPeak = settings.peak_equity && equity ? (1 - equity / settings.peak_equity) * 100 : 0;
-  const streakText = stats.current > 0 ? `${stats.current} win${stats.current > 1 ? "s" : ""} in a row` : stats.current < 0 ? `${-stats.current} loss${stats.current < -1 ? "es" : ""} in a row` : "-";
+  const belowPeak = settings.peak_equity && equity ? Math.max(0, (1 - equity / settings.peak_equity) * 100) : 0;
+  const streak = stats.current > 0 ? `${stats.current}W` : stats.current < 0 ? `${-stats.current}L` : "-";
+  const status = plan ? STATUS[plan.status] ?? { text: plan.status, tone: "" } : null;
 
   return (
     <>
-      <h2 className="section">Today&apos;s setup (Bitcoin futures)</h2>
       <section className="card">
+        <div className="card-head">
+          <h2>Today · Bitcoin</h2>
+          {status && <span className={`chip ${status.tone}`}>{status.text}</span>}
+        </div>
+
         {!plan ? (
-          <p className="muted">No check yet today - press &quot;Check market now&quot;.</p>
+          <p className="empty">No check yet today. Press &quot;Check now&quot;.</p>
         ) : (
           <>
-            <div className="row-between">
-              <span className={`chip ${plan.eligible ? "uptrend" : "downtrend"}`}>{STATUS_TEXT[plan.status] ?? plan.status}</span>
-              <span className="muted small">Updated {new Date(plan.updated_at).toLocaleTimeString()}</span>
-            </div>
-            <p className="reason" style={{ marginTop: 10 }}>
+            <p className="muted small" style={{ margin: 0 }}>
               {plan.note}
             </p>
-            {plan.eligible && (
-              <div className="grid small-grid">
-                <div className="stat">
-                  <div className="label">Bitcoin now</div>
-                  <div className="value">{fmtPrice(plan.price)}</div>
-                </div>
-                <div className="stat">
-                  <div className="label">Buys at</div>
-                  <div className="value">{fmtPrice(plan.trigger)}</div>
-                  {distance != null && <div className="muted small">{distance > 0 ? `${distance.toFixed(2)}% above current price` : "reached"}</div>}
-                </div>
-                <div className="stat">
-                  <div className="label">{plan.status === "waiting" ? "Score if it broke out now" : "Score"}</div>
-                  <div className="value">{ifNow ?? "-"}/7</div>
-                  <div className="muted small">
-                    {ifNow != null ? (leverageFor(ifNow, profile) ? `would trade at ${leverageFor(ifNow, profile)}x` : "would skip (needs 5+)") : ""}
+
+            {plan.eligible && plan.trigger ? (
+              <div className="target">
+                <div className="prices">
+                  <div>
+                    <div className="muted small">BTC now</div>
+                    <div className="big">{price(plan.price)}</div>
                   </div>
+                  <div style={{ textAlign: "right" }}>
+                    <div className="muted small">Buys at</div>
+                    <div className="big">{price(plan.trigger)}</div>
+                  </div>
+                </div>
+                {progress != null && (
+                  <div className="progress" aria-label="Distance to the buy price">
+                    <span style={{ width: `${progress * 100}%` }} />
+                  </div>
+                )}
+                {distance != null && (
+                  <div className="muted small" style={{ marginTop: 6 }}>
+                    {distance > 0 ? `${distance.toFixed(2)}% to go` : "Breakout level reached"}
+                  </div>
+                )}
+              </div>
+            ) : null}
+
+            {score != null && plan.eligible && (
+              <div className="score">
+                <div className="n">{score}/7</div>
+                <div className="small">
+                  {waiting ? "Score if it broke out now" : "Setup score"}
+                  <div className="muted">{lev ? `Trades at ${lev}x leverage` : "Below 5 - it would skip this one"}</div>
                 </div>
               </div>
             )}
-            {clues.length > 0 && (
+
+            {shownClues.length > 0 && plan.eligible && (
               <ul className="clues">
-                {clues.map((c) => (
-                  <li key={c.label} className={c.met ? "good" : "muted"}>
-                    {c.met ? "✓" : "✗"} {c.label}
+                {shownClues.map((c) => (
+                  <li key={c.label} className={c.met ? "yes" : "no"}>
+                    <span className="ic">{c.met ? "✓" : "–"}</span>
+                    <span>{c.label}</span>
                   </li>
                 ))}
-                {plan.status === "waiting" && (
-                  <li className={hourNow < THRESHOLDS.hour ? "good" : "muted"}>
-                    {hourNow < THRESHOLDS.hour ? "✓" : "✗"} Breakout before {THRESHOLDS.hour}:00 UTC (now {hourNow}:00)
-                  </li>
-                )}
               </ul>
             )}
           </>
         )}
       </section>
 
-      <div className="grid">
+      <div className="stats">
         <div className="card stat">
-          <div className="label">Breakout trades</div>
+          <div className="label">Trades</div>
           <div className="value">{stats.count}</div>
-          <div className="muted small">{stats.count ? `${Math.round((stats.wins / stats.count) * 100)}% won` : "none yet - about 1 every 2-3 weeks"}</div>
+          <div className="hint">{stats.count ? `${Math.round((stats.wins / stats.count) * 100)}% won` : "~2 a month"}</div>
         </div>
         <div className="card stat">
-          <div className="label">Current streak</div>
-          <div className="value">{streakText}</div>
+          <div className="label">Streak</div>
+          <div className={`value ${stats.current > 0 ? "good" : stats.current < 0 ? "bad" : ""}`}>{streak}</div>
+          <div className="hint">worst run: {stats.longestLoss}L</div>
         </div>
         <div className="card stat">
-          <div className="label">Longest losing streak</div>
-          <div className="value">{stats.longestLoss}</div>
-          <div className="muted small">backtest worst: 5</div>
+          <div className="label">From high</div>
+          <div className={`value ${belowPeak > 0.5 ? "bad" : "good"}`}>{belowPeak > 0.5 ? `−${belowPeak.toFixed(1)}%` : "At high"}</div>
+          <div className="hint">tested worst −37%</div>
         </div>
         <div className="card stat">
-          <div className="label">Below highest balance</div>
-          <div className={`value ${belowPeak > 0.5 ? "bad" : "good"}`}>{belowPeak > 0.5 ? `−${belowPeak.toFixed(1)}%` : "at the high"}</div>
-          <div className="muted small">backtest worst: −37%</div>
+          <div className="label">Leverage</div>
+          <div className="value">{profile === "safer" ? "2–3x" : "2–5x"}</div>
+          <div className="hint">by score</div>
         </div>
       </div>
 
       {plans.length > 1 && (
         <section className="card">
-          <h2>Last few days</h2>
-          <div className="table-wrap">
-            <table>
-              <tbody>
-                {plans.map((p) => (
-                  <tr key={p.day}>
-                    <td>{p.day}</td>
-                    <td>{STATUS_TEXT[p.status] ?? p.status}</td>
-                    <td>{p.score != null ? `${p.score}/7${p.leverage ? `, ${p.leverage}x` : ""}` : ""}</td>
-                    <td className="muted" style={{ whiteSpace: "normal" }}>
-                      {p.note}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="card-head">
+            <h2>This week</h2>
+          </div>
+          <div className="list">
+            {plans.map((p) => (
+              <div key={p.day} className="list-row">
+                <div className="main">
+                  <div className="title">
+                    {new Date(p.day + "T00:00:00Z").toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric", timeZone: "UTC" })}
+                  </div>
+                  <div className="sub">{p.note}</div>
+                </div>
+                <div className="right small muted">{p.score != null ? `${p.score}/7${p.leverage ? ` · ${p.leverage}x` : ""}` : ""}</div>
+              </div>
+            ))}
           </div>
         </section>
       )}
