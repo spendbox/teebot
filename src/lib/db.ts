@@ -28,7 +28,14 @@ export interface Settings {
   warning_action: "pause" | "alert";
   warning_at: string | null;
   warning_reason: string | null;
+  eth_mode?: "off" | "paper" | "live";
+  eth_share?: number;
+  eth_paper_start_balance?: number;
+  eth_peak_equity?: number | null;
+  eth_last_error?: string | null;
 }
+
+export type Strategy = "breakout" | "classic" | "eth";
 
 export interface Position {
   id: number;
@@ -48,7 +55,7 @@ export interface Position {
   pnl: number | null;
   exit_reason: string | null;
   signal: unknown;
-  strategy?: "breakout" | "classic";
+  strategy?: Strategy;
   leverage?: number | null;
   score?: number | null;
   entry_hour?: number | null;
@@ -80,11 +87,11 @@ export async function updateSettings(patch: Partial<Settings>): Promise<void> {
   check(await db().from("settings").update({ ...patch, updated_at: new Date().toISOString() }).eq("id", 1));
 }
 
-export async function openPositions(mode: string, strategy: "breakout" | "classic" = "classic"): Promise<Position[]> {
+export async function openPositions(mode: string, strategy: Strategy = "classic"): Promise<Position[]> {
   return check(await db().from("positions").select("*").eq("mode", mode).eq("strategy", strategy).eq("status", "open")) as Position[];
 }
 
-export async function closedPositions(mode: string, limit = 50, strategy: "breakout" | "classic" = "classic"): Promise<Position[]> {
+export async function closedPositions(mode: string, limit = 50, strategy: Strategy = "classic"): Promise<Position[]> {
   return check(
     await db()
       .from("positions")
@@ -97,7 +104,7 @@ export async function closedPositions(mode: string, limit = 50, strategy: "break
   ) as Position[];
 }
 
-export async function sumClosedPnl(mode: string, strategy: "breakout" | "classic" = "classic"): Promise<number> {
+export async function sumClosedPnl(mode: string, strategy: Strategy = "classic"): Promise<number> {
   const rows = check(await db().from("positions").select("pnl").eq("mode", mode).eq("strategy", strategy).eq("status", "closed")) as {
     pnl: number | null;
   }[];

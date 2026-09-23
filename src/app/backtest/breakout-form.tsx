@@ -6,8 +6,22 @@ import { EquityChart } from "../chart";
 
 const pct = (x: number) => `${x >= 0 ? "+" : ""}${x.toFixed(1)}%`;
 
-export function BreakoutBacktestForm() {
-  const [state, action, pending] = useActionState<BreakoutBacktestState, FormData>(runBreakoutBacktest, null);
+type Runner = (prev: BreakoutBacktestState, form: FormData) => Promise<BreakoutBacktestState>;
+
+export function BreakoutBacktestForm({
+  run = runBreakoutBacktest,
+  coin = "Bitcoin",
+  maxScore = 7,
+  showProfile = true,
+  defaultBalance = 50,
+}: {
+  run?: Runner;
+  coin?: string;
+  maxScore?: number;
+  showProfile?: boolean;
+  defaultBalance?: number;
+}) {
+  const [state, action, pending] = useActionState<BreakoutBacktestState, FormData>(run, null);
   const r = state?.result;
   return (
     <>
@@ -18,12 +32,14 @@ export function BreakoutBacktestForm() {
           <option value="1095">Last 3 years</option>
           <option value="1800">Last 5 years</option>
         </select>
-        <select name="profile" defaultValue="balanced">
-          <option value="balanced">Balanced (2x / 4x / 5x)</option>
-          <option value="safer">Safer (2x / 3x)</option>
-        </select>
+        {showProfile && (
+          <select name="profile" defaultValue="balanced">
+            <option value="balanced">Balanced (2x / 4x / 5x)</option>
+            <option value="safer">Safer (2x / 3x)</option>
+          </select>
+        )}
         <span>Start with $</span>
-        <input name="balance" type="number" min="10" defaultValue="50" style={{ width: 90 }} />
+        <input name="balance" type="number" min="10" defaultValue={defaultBalance} style={{ width: 90 }} />
         <button className="primary" type="submit" disabled={pending}>
           {pending ? (
             <>
@@ -65,7 +81,7 @@ export function BreakoutBacktestForm() {
               </div>
             </div>
             <div className="stat">
-              <div className="label">Just holding Bitcoin</div>
+              <div className="label">Just holding {coin}</div>
               <div className={`value ${r.buyHoldPct >= 0 ? "good" : "bad"}`}>{pct(r.buyHoldPct)}</div>
             </div>
           </div>
@@ -109,7 +125,9 @@ export function BreakoutBacktestForm() {
                 {r.trades.map((t) => (
                   <tr key={t.day}>
                     <td>{new Date(t.day).toISOString().slice(0, 10)}</td>
-                    <td>{t.score}/7</td>
+                    <td>
+                      {t.score}/{maxScore}
+                    </td>
                     <td>{t.leverage}x</td>
                     <td>{t.reason}</td>
                     <td className={t.ret >= 0 ? "good" : "bad"}>{pct(t.ret * 100)}</td>
@@ -119,7 +137,7 @@ export function BreakoutBacktestForm() {
             </table>
           </div>
           <p className="muted">
-            Uses Bybit&apos;s own Bitcoin futures prices, with fees, slippage and funding, and skips trades below Bybit&apos;s minimum order. Past
+            Uses Bybit&apos;s own {coin} futures prices, with fees, slippage and funding, and skips trades below Bybit&apos;s minimum order. Past
             results don&apos;t guarantee future profit.
           </p>
         </div>

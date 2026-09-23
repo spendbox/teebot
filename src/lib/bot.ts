@@ -26,6 +26,7 @@ import type { Candle } from "./engine/types";
 import { getFearGreed } from "./sentiment";
 import { sendTelegram } from "./telegram";
 import { runBreakoutTick } from "./breakout/bot";
+import { ethMode, runEthTick } from "./eth/bot";
 
 export interface CoinReport {
   symbol: string;
@@ -58,17 +59,25 @@ export async function runTick(opts: { manual?: boolean } = {}): Promise<TickRepo
   if ((settings.strategy ?? "breakout") === "breakout") {
     if (!(await acquireLock(50))) return { status: "busy", messages: ["Another run is in progress"] };
     try {
-      const report = await runBreakoutTick(settings, opts);
-      await logCheck(report);
-      return report;
-    } catch (e) {
-      const msg = (e as Error).message;
-      if (msg !== settings.last_error) {
-        await logEvent("error", `Bot error: ${msg}`);
-        await sendTelegram(settings.telegram_chat_id, `Bot error: ${msg}`);
+      let report: TickReport;
+      try {
+        report = await runBreakoutTick(settings, opts);
+      } catch (e) {
+        const msg = (e as Error).message;
+        if (msg !== settings.last_error) {
+          await logEvent("error", `Bot error: ${msg}`);
+          await sendTelegram(settings.telegram_chat_id, `Bot error: ${msg}`);
+        }
+        await updateSettings({ last_error: msg, last_tick_at: new Date().toISOString() });
+        report = { status: "error", messages: [msg] };
       }
-      await updateSettings({ last_error: msg, last_tick_at: new Date().toISOString() });
-      return { status: "error", messages: [msg] };
+      // The Ethereum trader runs after Bitcoin; an error in one never stops the other.
+      const eth = await runEthSafely(opts);
+      const merged: TickReport = eth
+        ? { status: report.status, messages: [...report.messages, ...eth.messages], coins: [...(report.coins ?? []), ...(eth.coins ?? [])] }
+        : report;
+      await logCheck(merged);
+      return merged;
     } finally {
       await releaseLock();
     }
@@ -82,6 +91,31 @@ export async function runTick(opts: { manual?: boolean } = {}): Promise<TickRepo
   const report = await runClassicTick(settings);
   await logCheck(report);
   return report;
+}
+
+async function runEthSafely(opts: { manual?: boolean }): Promise<TickReport | null> {
+  try {
+    const s = await getSettings(); // fresh: the Bitcoin pass may have triggered the safety shutdown
+    if (ethMode(s) === "off") return null;
+    if (s.kill_switch) return await runEthTick(s, { flattenOnly: true });
+    if (!s.enabled && ethMode(s) !== "paper") return null; // "Check now" with the bot off only runs practice
+    const report = await runEthTick(s, opts);
+    if (s.eth_last_error) await updateSettings({ eth_last_error: null });
+    return report;
+  } catch (e) {
+    const msg = (e as Error).message;
+    try {
+      const s = await getSettings();
+      if (msg !== s.eth_last_error) {
+        await logEvent("error", `ETH bot error: ${msg}`);
+        await sendTelegram(s.telegram_chat_id, `ETH bot error: ${msg}`);
+      }
+      await updateSettings({ eth_last_error: msg });
+    } catch {
+      // never let the Ethereum trader break the Bitcoin one
+    }
+    return { status: "error", messages: [`ETH: ${msg}`] };
+  }
 }
 
 // One line in the activity log per market check; the log is capped at 5,000 rows.

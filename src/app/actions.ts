@@ -6,6 +6,7 @@ import { SESSION_COOKIE, requireAuth, safeEqual, sessionToken } from "@/lib/auth
 import { runTick, type TickReport } from "@/lib/bot";
 import { getFuturesHistory, getFuturesPosition, getHistory, getWallet } from "@/lib/bybit";
 import { HISTORY_DAYS, backtestBreakout, type BreakoutBacktest } from "@/lib/breakout/strategy";
+import { ETH_HISTORY_DAYS, backtestEth } from "@/lib/eth/strategy";
 import { db, getSettings, logEvent, updateSettings } from "@/lib/db";
 import { backtest, type BacktestResult } from "@/lib/engine/backtest";
 import { getProfile } from "@/lib/engine/profiles";
@@ -54,7 +55,7 @@ export async function saveStrategy(form: FormData) {
   const strategy = form.get("strategy") === "classic" ? "classic" : "breakout";
   const breakout_profile = form.get("breakout_profile") === "safer" ? "safer" : "balanced";
   const s = await getSettings();
-  const open = await db().from("positions").select("id").eq("mode", s.mode).eq("status", "open");
+  const open = await db().from("positions").select("id").eq("mode", s.mode).eq("status", "open").neq("strategy", "eth");
   if (strategy !== (s.strategy ?? "breakout") && (open.data?.length ?? 0) > 0) {
     back("/settings", "Close the open trade first (or wait for it to finish) before switching strategy");
   }
@@ -109,12 +110,12 @@ export async function setMode(form: FormData) {
   if (mode === "live") {
     if (String(form.get("confirm")).trim() !== "LIVE") back("/settings", 'Type LIVE in the box to confirm real-money trading');
     if (!process.env.BYBIT_API_KEY || !process.env.BYBIT_API_SECRET) back("/settings", "Add your Bybit API keys in Vercel first");
-    const open = await db().from("positions").select("id").eq("mode", "paper").eq("status", "open");
+    const open = await db().from("positions").select("id").eq("mode", "paper").eq("status", "open").neq("strategy", "eth");
     if ((open.data?.length ?? 0) > 0) back("/settings", "Wait until practice trades are closed, or reset practice mode");
   }
   if (mode !== "live" && mode !== "paper") back("/settings", "Unknown mode");
   if (mode === s.mode) back("/settings", `Already in ${mode === "live" ? "real money" : "practice"} mode`);
-  const openLive = await db().from("positions").select("id").eq("mode", "live").eq("status", "open");
+  const openLive = await db().from("positions").select("id").eq("mode", "live").eq("status", "open").neq("strategy", "eth");
   if (mode === "paper" && (openLive.data?.length ?? 0) > 0) {
     back("/settings", "You still have real trades open. Wait for them to close before switching to practice");
   }
@@ -130,11 +131,55 @@ export async function setMode(form: FormData) {
   back("/settings", `Now in ${mode === "live" ? "REAL MONEY" : "practice"} mode. The bot is paused - switch it on from the dashboard.`);
 }
 
+// ---- Ethereum trader ----
+export async function setEthMode(form: FormData) {
+  await requireAuth();
+  const s = await getSettings();
+  if (!("eth_mode" in s)) back("/settings", "Run supabase/upgrade-eth.sql in Supabase first");
+  const mode = String(form.get("eth_mode"));
+  if (!["off", "paper", "live"].includes(mode)) back("/settings", "Unknown Ethereum mode");
+  const current = s.eth_mode ?? "paper";
+  if (mode === current) back("/settings", "The Ethereum trader is already in that mode");
+  if (current !== "off") {
+    const open = await db().from("positions").select("id").eq("mode", current).eq("strategy", "eth").eq("status", "open");
+    if ((open.data?.length ?? 0) > 0) back("/settings", "The Ethereum trader has an open trade. Wait for it to close (by 23:57 UTC) before changing its mode");
+  }
+  if (mode === "live") {
+    if (String(form.get("confirm")).trim() !== "LIVE") back("/settings", "Type LIVE in the box to let the Ethereum trader use real money");
+    if (!process.env.BYBIT_API_KEY || !process.env.BYBIT_API_SECRET) back("/settings", "Add your Bybit API keys in Vercel first");
+  }
+  await updateSettings({ eth_mode: mode as "off" | "paper" | "live", eth_peak_equity: null, eth_last_error: null });
+  await logEvent("warn", `Ethereum trader switched to ${mode === "live" ? "REAL MONEY" : mode === "paper" ? "practice" : "off"}`);
+  back("/settings", mode === "live" ? "The Ethereum trader now uses real money" : mode === "paper" ? "The Ethereum trader is in practice mode" : "The Ethereum trader is off");
+}
+
+export async function resetEthPractice(form: FormData) {
+  await requireAuth();
+  const s = await getSettings();
+  if (!("eth_mode" in s)) back("/settings", "Run supabase/upgrade-eth.sql in Supabase first");
+  const balance = Number(form.get("balance"));
+  if (!(balance >= 5 && balance <= 1_000_000)) back("/settings", "Enter a starting balance between 5 and 1,000,000");
+  await db().from("positions").delete().eq("mode", "paper").eq("strategy", "eth");
+  await db().from("eth_day_plans").delete().eq("mode", "paper");
+  await updateSettings({ eth_paper_start_balance: balance, ...(s.eth_mode !== "live" ? { eth_peak_equity: null } : {}) });
+  back("/settings", `Ethereum practice account reset to $${balance}`);
+}
+
+export async function saveEthShare(form: FormData) {
+  await requireAuth();
+  const s = await getSettings();
+  if (!("eth_mode" in s)) back("/settings", "Run supabase/upgrade-eth.sql in Supabase first");
+  const share = Number(form.get("share"));
+  if (![0.25, 0.5, 0.75].includes(share)) back("/settings", "Choose 25%, 50% or 75%");
+  await updateSettings({ eth_share: share, eth_peak_equity: null });
+  back("/settings", `With real money, Ethereum will use ${share * 100}% of the Bybit balance`);
+}
+
 export async function resetPaper(form: FormData) {
   await requireAuth();
   const balance = Number(form.get("balance"));
   if (!(balance >= 5 && balance <= 1_000_000)) back("/settings", "Enter a starting balance between 5 and 1,000,000");
-  await db().from("positions").delete().eq("mode", "paper");
+  await db().from("positions").delete().eq("mode", "paper").neq("strategy", "eth"); // the Ethereum practice account has its own reset
   await db().from("equity_snapshots").delete().eq("mode", "paper");
   const s = await getSettings();
   await updateSettings({
@@ -208,6 +253,23 @@ export async function runBacktest(_prev: BacktestState, form: FormData): Promise
 }
 
 export type BreakoutBacktestState = { error?: string; days?: number; result?: Omit<BreakoutBacktest, "trades"> & { trades: BreakoutBacktest["trades"] } } | null;
+
+export async function runEthBacktest(_prev: BreakoutBacktestState, form: FormData): Promise<BreakoutBacktestState> {
+  await requireAuth();
+  const days = Math.min(1800, Math.max(90, Number(form.get("days")) || 730));
+  const balance = Math.max(10, Number(form.get("balance")) || 100);
+  try {
+    const [eth, btc] = await Promise.all([
+      getFuturesHistory("ETHUSDT", days + ETH_HISTORY_DAYS + 2),
+      getFuturesHistory("BTCUSDT", days + ETH_HISTORY_DAYS + 2),
+    ]);
+    const from = Date.now() - days * 86_400_000;
+    const result = backtestEth(eth, btc, { startBalance: balance, minNotional: 30, from });
+    return { days, result: { ...result, trades: result.trades.slice(-30).reverse() } };
+  } catch (e) {
+    return { error: (e as Error).message };
+  }
+}
 
 export async function runBreakoutBacktest(_prev: BreakoutBacktestState, form: FormData): Promise<BreakoutBacktestState> {
   await requireAuth();

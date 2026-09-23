@@ -1,6 +1,6 @@
 import { getSettings } from "@/lib/db";
 import { PROFILES } from "@/lib/engine/profiles";
-import { clearWarning, connectTelegram, resetPaper, saveWarning, resetPeak, resetSafety, saveSettings, saveStrategy, setMode, testBybit } from "../actions";
+import { clearWarning, connectTelegram, resetEthPractice, resetPaper, saveEthShare, saveWarning, setEthMode, resetPeak, resetSafety, saveSettings, saveStrategy, setMode, testBybit } from "../actions";
 import { LogoutButton, Message, Nav } from "../ui";
 
 export const dynamic = "force-dynamic";
@@ -111,6 +111,68 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
           <form action={testBybit}>
             <button type="submit">Test Bybit connection</button>
           </form>
+        </div>
+
+        <div className="card" id="ethereum">
+          <h2>Ethereum day-trader</h2>
+          {!("eth_mode" in s) ? (
+            <p className="bad">Not set up yet: run supabase/upgrade-eth.sql in Supabase (SQL Editor → paste → Run). It starts in practice mode.</p>
+          ) : (
+            <>
+              <p>
+                Currently:{" "}
+                <strong>{s.eth_mode === "live" ? "REAL MONEY on Bybit" : s.eth_mode === "off" ? "Off" : "Practice money"}</strong>
+              </p>
+              <p className="muted small">
+                Buys strong same-day Ethereum breakouts, scored 0–4 (Bitcoin breaking out too, early breakout, early in a recovery), at 1x–3x.
+                Stop 3–8% below the buy, always sold by 23:57 UTC. It runs next to the Bitcoin bot and uses the same Start/Stop switch.
+              </p>
+              <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
+                {s.eth_mode !== "paper" && (
+                  <form action={setEthMode}>
+                    <input type="hidden" name="eth_mode" value="paper" />
+                    <button type="submit">Use practice money</button>
+                  </form>
+                )}
+                {s.eth_mode !== "off" && (
+                  <form action={setEthMode}>
+                    <input type="hidden" name="eth_mode" value="off" />
+                    <button type="submit">Switch Ethereum off</button>
+                  </form>
+                )}
+              </div>
+              {s.eth_mode !== "live" && (
+                <form action={setEthMode} className="row" style={{ marginTop: 12 }}>
+                  <input type="hidden" name="eth_mode" value="live" />
+                  <input name="confirm" placeholder="Type LIVE to confirm" />
+                  <button className="danger" type="submit">
+                    Use real money for Ethereum
+                  </button>
+                </form>
+              )}
+              <h3>Practice account</h3>
+              <form action={resetEthPractice} className="row">
+                <span>Start again with $</span>
+                <input name="balance" type="number" min="5" step="1" defaultValue={s.eth_paper_start_balance ?? 100} style={{ width: 100 }} />
+                <button type="submit">Reset Ethereum practice</button>
+              </form>
+              <h3>Real money share</h3>
+              <form action={saveEthShare} className="row">
+                <span>With real money, Ethereum uses</span>
+                <select name="share" defaultValue={String(s.eth_share ?? 0.5)}>
+                  <option value="0.25">25%</option>
+                  <option value="0.5">50%</option>
+                  <option value="0.75">75%</option>
+                </select>
+                <span>of the Bybit balance</span>
+                <button type="submit">Save</button>
+              </form>
+              <p className="muted small">
+                When both Bitcoin and Ethereum use real money, Bitcoin gets the rest. Practice first: switch to real money only after a few weeks
+                of practice trades you are happy with. Ethereum&apos;s minimum order is 0.01 ETH.
+              </p>
+            </>
+          )}
         </div>
 
         <div className="card">

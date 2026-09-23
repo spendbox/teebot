@@ -211,8 +211,10 @@ export function TodayChart(props: {
   entry: number | null;
   stop: number | null;
   showGap: boolean;
+  coin?: string;
+  decimals?: number;
 }) {
-  const { points, dayStart, open, trigger, entry, stop, showGap } = props;
+  const { points, dayStart, open, trigger, entry, stop, showGap, coin = "Bitcoin", decimals = 0 } = props;
   const last = points[points.length - 1];
   const refLines: RefLine[] = [];
   if (open) refLines.push({ value: open, label: "Opened at", color: "var(--muted)" });
@@ -223,14 +225,14 @@ export function TodayChart(props: {
   const gap = showGap && trigger && last && pct != null && pct > 0 ? { from: last.v, to: trigger, label: `${pct.toFixed(2)}% to go` } : null;
   return (
     <PriceChart
-      series={[{ name: "Bitcoin price", color: "var(--text)", points }]}
+      series={[{ name: `${coin} price`, color: "var(--text)", points }]}
       refLines={refLines}
       gap={gap}
       xDomain={[dayStart, dayStart + 86_400_000]}
       xTicks={[0, 6, 12, 18, 24].map((hr) => ({ t: dayStart + hr * 3_600_000, label: hr === 24 ? "24:00" : `${String(hr).padStart(2, "0")}:00` }))}
-      formatY={usd0}
+      formatY={decimals ? (v: number) => `$${v.toLocaleString("en-US", { minimumFractionDigits: decimals, maximumFractionDigits: decimals })}` : usd0}
       formatX={hhmm}
-      ariaLabel="Bitcoin price today with the buy level"
+      ariaLabel={`${coin} price today with the buy level`}
     />
   );
 }
