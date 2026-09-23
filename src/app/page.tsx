@@ -87,6 +87,13 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
             <strong>Safety shutdown:</strong> {s.kill_reason}. The bot closed everything and stopped. See <a href="/settings">Settings</a>.
           </div>
         )}
+        {s.warning_at && (
+          <div className="notice danger-notice">
+            <strong>Early warning:</strong> {s.warning_reason}.{" "}
+            {(s.warning_action ?? "pause") === "pause" ? "New trades are paused." : "The bot is still trading."}{" "}
+            <a href="/settings#early-warning">Review it in Settings</a>
+          </div>
+        )}
         {s.last_error && <div className="notice">Last check had a problem: {s.last_error}</div>}
 
         <div className="stack">

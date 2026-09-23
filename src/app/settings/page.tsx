@@ -1,6 +1,6 @@
 import { getSettings } from "@/lib/db";
 import { PROFILES } from "@/lib/engine/profiles";
-import { connectTelegram, resetPaper, resetPeak, resetSafety, saveSettings, saveStrategy, setMode, testBybit } from "../actions";
+import { clearWarning, connectTelegram, resetPaper, saveWarning, resetPeak, resetSafety, saveSettings, saveStrategy, setMode, testBybit } from "../actions";
 import { LogoutButton, Message, Nav } from "../ui";
 
 export const dynamic = "force-dynamic";
@@ -134,6 +134,56 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
           <form action={connectTelegram}>
             <button type="submit">Connect Telegram</button>
           </form>
+        </div>
+
+        <div className="card" id="early-warning">
+          <h2>Early warning</h2>
+          {!("run_start_at" in s) ? (
+            <p className="bad">Not set up yet: run supabase/upgrade-warning.sql in Supabase (SQL Editor → paste → Run).</p>
+          ) : (
+            <>
+              {s.warning_at ? (
+                <p className="bad">
+                  <strong>Triggered:</strong> {s.warning_reason}.
+                </p>
+              ) : (
+                <p>
+                  Watching since{" "}
+                  {s.run_start_at ? new Date(s.run_start_at).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }) : "the next check"}
+                  {s.run_start_equity != null ? ` from a balance of $${s.run_start_equity.toFixed(2)}` : ""}.
+                </p>
+              )}
+              <p className="muted small">
+                Warns you if the balance falls 15% in the first 2 months, 20% by month 4, or 30% after that, measured from where this run started.
+              </p>
+              <form action={saveWarning}>
+                <label className="option">
+                  <input type="radio" name="warning_action" value="pause" defaultChecked={(s.warning_action ?? "pause") === "pause"} />
+                  <span>
+                    <strong>Alert me and pause new trades</strong> <span className="chip accent">Recommended</span>
+                    <span className="muted small" style={{ display: "block" }}>
+                      An open trade still finishes normally. You decide whether to carry on.
+                    </span>
+                  </span>
+                </label>
+                <label className="option">
+                  <input type="radio" name="warning_action" value="alert" defaultChecked={s.warning_action === "alert"} />
+                  <span>
+                    <strong>Only alert me</strong>
+                    <span className="muted small" style={{ display: "block" }}>
+                      Telegram message and a red banner; the bot keeps trading.
+                    </span>
+                  </span>
+                </label>
+                <button type="submit">Save</button>
+              </form>
+              <form action={clearWarning} style={{ marginTop: 12 }}>
+                <button className={s.warning_at ? "danger" : ""} type="submit">
+                  {s.warning_at ? "I've reviewed it - clear the warning and resume" : "Restart the warning clock from today"}
+                </button>
+              </form>
+            </>
+          )}
         </div>
 
         <div className="card">

@@ -1,5 +1,6 @@
 import { breakoutStats } from "@/lib/breakout/bot";
 import { THRESHOLDS, leverageFor } from "@/lib/breakout/strategy";
+import { checkWarning } from "@/lib/breakout/warning";
 import { getKlines } from "@/lib/bybit";
 import { db, type Position, type Settings } from "@/lib/db";
 import { TodayChart, TrendChart } from "./price-chart";
@@ -200,6 +201,10 @@ export async function BreakoutPanel({ settings, equity, openTrade }: { settings:
         </div>
       </div>
 
+      {settings.run_start_at && settings.run_start_equity != null && equity != null && (
+        <WarningGauge startAt={Date.parse(settings.run_start_at)} startEquity={settings.run_start_equity} equity={equity} active={!!settings.warning_at} />
+      )}
+
       {plans.length > 1 && (
         <section className="card">
           <div className="card-head">
@@ -221,5 +226,35 @@ export async function BreakoutPanel({ settings, equity, openTrade }: { settings:
         </section>
       )}
     </>
+  );
+}
+
+const shortDate = (t: number) => new Date(t).toLocaleDateString(undefined, { month: "short", day: "numeric", timeZone: "UTC" });
+
+function WarningGauge({ startAt, startEquity, equity, active }: { startAt: number; startEquity: number; equity: number; active: boolean }) {
+  const w = checkWarning(startEquity, equity, startAt, Date.now());
+  const change = (equity / startEquity - 1) * 100;
+  const used = Math.min(1, w.dropPct / w.limitPct);
+  const tone = active || used >= 1 ? "bad" : used >= 0.6 ? "warn" : "good";
+  return (
+    <section className="card" id="early-warning">
+      <div className="card-head">
+        <h2>Early warning</h2>
+        <span className={`chip ${tone === "bad" ? "bad" : tone === "warn" ? "" : "good"}`}>{active ? "Triggered" : tone === "warn" ? "Getting close" : "All clear"}</span>
+      </div>
+      <div className="gauge" aria-label={`Down ${w.dropPct.toFixed(1)}% of a ${w.limitPct}% limit`}>
+        <span className={tone} style={{ width: `${Math.max(2, used * 100)}%` }} />
+      </div>
+      <div className="row-between small" style={{ marginTop: 6 }}>
+        <span>
+          {change >= 0 ? "Up" : "Down"} <strong>{Math.abs(change).toFixed(1)}%</strong> since {shortDate(startAt)}
+        </span>
+        <span className="muted">warning at −{w.limitPct}%</span>
+      </div>
+      <p className="explain">
+        If the balance falls {w.limitPct}% below where it started{w.limitChangesAt ? ` (before ${shortDate(w.limitChangesAt)})` : ""}, the strategy may have stopped
+        working and you get an alert. A working bot falls this far only about 1–2 times in 100.
+      </p>
+    </section>
   );
 }

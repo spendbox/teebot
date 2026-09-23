@@ -137,6 +137,22 @@ Before every buy, Teebot can ask **Claude Opus 5.5** for a second opinion. The A
 
 **After you deposit or withdraw,** press *"I deposited or withdrew - restart balance tracking"* in Settings. Otherwise a withdrawal looks like a loss.
 
+### Early warning (catches a strategy that has stopped working)
+
+Run [`supabase/upgrade-warning.sql`](supabase/upgrade-warning.sql) once: Supabase → **SQL Editor** → **New query** → paste → **Run**. (Skip this if you set up Supabase after this file was added. It's already in `schema.sql`.)
+
+The bot remembers your balance when a run starts (when you switch to real money, reset practice, or restart the warning clock). It warns you if the balance falls:
+
+| Time since start | Warning if down |
+|---|---|
+| First 2 months | 15% |
+| Months 2–4 | 20% |
+| After that | 30% |
+
+In 20,000 simulated runs of the tested trades, a working bot fell this far only about 1–2 times in 100.
+When it triggers you get a Telegram message and a red banner, and (by default) **new trades pause**. Any open trade still finishes normally.
+Review it, then press **"I've reviewed it - clear the warning and resume"** in Settings. You can switch it to "only alert me" there.
+
 ### If something goes wrong
 
 - **"Bybit refused the connection from this server's location":** Bybit blocks some countries, such as the USA. This project runs from Frankfurt (`fra1`). In GitHub, edit [`vercel.json`](vercel.json) and change `fra1` to another region such as `dub1` (Dublin) or `cpt1` (Cape Town). Commit, and Vercel redeploys automatically.

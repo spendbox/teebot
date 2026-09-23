@@ -80,6 +80,28 @@ export async function saveSettings(form: FormData) {
   back("/settings", "Settings saved");
 }
 
+// Restarts the early-warning clock. Skipped if the database hasn't been upgraded yet.
+const restartWarning = (s: { run_start_at?: unknown }) =>
+  "run_start_at" in s ? { run_start_at: null, run_start_equity: null, warning_at: null, warning_reason: null } : {};
+
+export async function saveWarning(form: FormData) {
+  await requireAuth();
+  const s = await getSettings();
+  if (!("run_start_at" in s)) back("/settings", "Run supabase/upgrade-warning.sql in Supabase first");
+  const action = String(form.get("warning_action"));
+  if (action !== "pause" && action !== "alert") back("/settings", "Choose what the early warning should do");
+  await updateSettings({ warning_action: action as "pause" | "alert" });
+  back("/settings", action === "pause" ? "Early warning will pause new trades" : "Early warning will only alert you");
+}
+
+export async function clearWarning() {
+  await requireAuth();
+  const s = await getSettings();
+  await updateSettings(restartWarning(s));
+  await logEvent("warn", "Early warning cleared by owner - the warning clock restarts from today's balance");
+  back("/settings", "Early warning cleared. It now measures from today's balance and the clock starts again.");
+}
+
 export async function setMode(form: FormData) {
   await requireAuth();
   const mode = String(form.get("mode"));
@@ -96,7 +118,14 @@ export async function setMode(form: FormData) {
   if (mode === "paper" && (openLive.data?.length ?? 0) > 0) {
     back("/settings", "You still have real trades open. Wait for them to close before switching to practice");
   }
-  await updateSettings({ mode: mode as "paper" | "live", enabled: false, peak_equity: null, day_start_equity: null, day_start_date: null });
+  await updateSettings({
+    mode: mode as "paper" | "live",
+    enabled: false,
+    peak_equity: null,
+    day_start_equity: null,
+    day_start_date: null,
+    ...restartWarning(s),
+  });
   await logEvent("warn", `Switched to ${mode === "live" ? "REAL MONEY" : "practice"} mode (bot paused)`);
   back("/settings", `Now in ${mode === "live" ? "REAL MONEY" : "practice"} mode. The bot is paused - switch it on from the dashboard.`);
 }
@@ -110,7 +139,7 @@ export async function resetPaper(form: FormData) {
   const s = await getSettings();
   await updateSettings({
     paper_start_balance: balance,
-    ...(s.mode === "paper" ? { peak_equity: null, day_start_equity: null, day_start_date: null, kill_switch: false, kill_reason: null } : {}),
+    ...(s.mode === "paper" ? { peak_equity: null, day_start_equity: null, day_start_date: null, kill_switch: false, kill_reason: null, ...restartWarning(s) } : {}),
   });
   back("/settings", `Practice account reset to $${balance}`);
 }
@@ -124,7 +153,8 @@ export async function resetSafety() {
 
 export async function resetPeak() {
   await requireAuth();
-  await updateSettings({ peak_equity: null, day_start_equity: null, day_start_date: null });
+  const s = await getSettings();
+  await updateSettings({ peak_equity: null, day_start_equity: null, day_start_date: null, ...("run_start_at" in s ? { run_start_equity: null } : {}) });
   back("/settings", "Balance tracking restarted (use this after depositing or withdrawing)");
 }
 

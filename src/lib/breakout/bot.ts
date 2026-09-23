@@ -15,6 +15,7 @@ import {
   type Bar,
   type DayPlan,
 } from "./strategy";
+import { checkWarning } from "./warning";
 
 export const SYMBOL = "BTCUSDT";
 const DAY = 86_400_000;
@@ -155,8 +156,11 @@ export async function runBreakoutTick(settings: Settings, opts: { manual?: boole
     }
   }
 
-  // 2. Look for today's breakout.
-  if (!pos && status === "waiting" && plan.eligible) {
+  // 2. Look for today's breakout (unless the early warning has paused new trades).
+  const warningPause = !!settings.warning_at && (settings.warning_action ?? "pause") === "pause";
+  if (!pos && status === "waiting" && plan.eligible && warningPause) {
+    note = "Early warning is on - no new trades until you review it in Settings";
+  } else if (!pos && status === "waiting" && plan.eligible) {
     const distance = (plan.trigger / price - 1) * 100;
     note = `Watching: buys if BTC reaches ${plan.trigger.toFixed(1)} (${distance > 0 ? `${distance.toFixed(2)}% away` : "reached"})`;
     if (price >= plan.trigger && minuteOfDay < CLOSE_MINUTE - 10) {
@@ -244,7 +248,8 @@ export async function runBreakoutTick(settings: Settings, opts: { manual?: boole
     await updateSettings({ kill_switch: true, enabled: false, kill_reason: `Balance fell ${(((peak - equity) / peak) * 100).toFixed(0)}% from its peak` });
     await alert("error", "SAFETY SHUTDOWN: balance fell 50% from its peak. The bot closed everything and stopped.");
   }
-  await updateSettings({ peak_equity: Math.max(peak, equity), last_tick_at: new Date().toISOString(), last_error: null });
+  const warningPatch = await earlyWarning(settings, equity, now, alert);
+  await updateSettings({ ...warningPatch, peak_equity: Math.max(peak, equity), last_tick_at: new Date().toISOString(), last_error: null });
 
   const coin: CoinReport = {
     symbol: SYMBOL,
@@ -255,6 +260,35 @@ export async function runBreakoutTick(settings: Settings, opts: { manual?: boole
     outcome: note,
   };
   return { status: "ran", messages, coins: [coin] };
+}
+
+// Early warning: compares the balance with where this run started (see warning.ts).
+async function earlyWarning(
+  settings: Settings,
+  equity: number,
+  now: number,
+  alert: (level: "error", text: string) => Promise<void>,
+): Promise<Partial<Settings>> {
+  if (!("run_start_at" in settings)) return {}; // database not upgraded yet
+  const patch: Partial<Settings> = {};
+  if (!settings.run_start_at) patch.run_start_at = new Date(now).toISOString();
+  if (settings.run_start_equity == null) patch.run_start_equity = equity;
+  if (settings.warning_at || equity <= 0) return patch;
+  const startAt = settings.run_start_at ? Date.parse(settings.run_start_at) : now;
+  const w = checkWarning(settings.run_start_equity ?? equity, equity, startAt, now);
+  if (!w.triggered) return patch;
+  const days = Math.max(1, Math.round(w.months * 30));
+  const period = days < 60 ? `${days} day${days === 1 ? "" : "s"}` : `${w.months.toFixed(1)} months`;
+  patch.warning_at = new Date(now).toISOString();
+  patch.warning_reason = `Balance fell ${w.dropPct.toFixed(1)}% in ${period} (warning level: ${w.limitPct}%)`;
+  const paused = (settings.warning_action ?? "pause") === "pause";
+  await alert(
+    "error",
+    `EARLY WARNING: your balance fell ${w.dropPct.toFixed(1)}% in ${period}. A working bot rarely falls this fast, so the strategy may have stopped working. ${
+      paused ? "New trades are paused (any open trade still finishes normally)." : "The bot keeps trading."
+    } Review it in Settings.`,
+  );
+  return patch;
 }
 
 // Stats for the dashboard: streaks and distance from the high.
