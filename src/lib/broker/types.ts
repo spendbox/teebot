@@ -9,6 +9,7 @@ export interface Fill {
 export interface Exit {
   price: number;
   proceeds: number; // USDT received after fees
+  qty: number; // coins sold
 }
 
 export type StopState = { status: "active" } | { status: "missing" } | { status: "filled"; exit: Exit };
@@ -21,7 +22,8 @@ export interface Broker {
   // Returns the exchange order id of the stop, or null when the bot watches the stop itself.
   placeStop(symbol: string, qty: number, stop: number): Promise<string | null>;
   moveStop(pos: Position, stop: number): Promise<string | null>;
-  sell(pos: Position, price: number): Promise<Exit>;
+  // Sells `qty` (default: the whole position). Any exchange stop-loss is cancelled first.
+  sell(pos: Position, price: number, qty?: number): Promise<Exit>;
   // State of the exchange-side stop-loss ("filled" means it already sold the position).
   checkStop(pos: Position): Promise<StopState>;
 }

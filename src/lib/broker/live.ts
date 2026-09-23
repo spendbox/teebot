@@ -52,24 +52,24 @@ export function liveBroker(): Broker {
       }
       return this.placeStop(pos.symbol, pos.qty, stop);
     },
-    async sell(pos) {
+    async sell(pos, _price, qtyToSell = pos.qty) {
       if (pos.stop_order_id) {
         await bybit.cancelStopLoss(pos.symbol, pos.stop_order_id).catch(() => undefined);
       }
       const r = await rules(pos.symbol);
       const wallet = await bybit.getWallet();
       const held = wallet.coins[r.baseCoin] ?? 0;
-      const qty = bybit.roundStep(Math.min(pos.qty, held), r.basePrecision);
+      const qty = bybit.roundStep(Math.min(qtyToSell, held), r.basePrecision);
       const orderId = await bybit.marketSell(pos.symbol, qty);
       const o = await waitForFill(pos.symbol, orderId);
-      return { price: o.avgPrice, proceeds: o.cumExecValue * (1 - FEE) };
+      return { price: o.avgPrice, proceeds: o.cumExecValue * (1 - FEE), qty: o.cumExecQty };
     },
     async checkStop(pos: Position) {
       if (!pos.stop_order_id) return { status: "missing" };
       const o = await bybit.getOrder(pos.symbol, pos.stop_order_id, true);
       if (!o) return { status: "missing" };
       if (o.orderStatus === "Filled" && o.cumExecQty > 0) {
-        return { status: "filled", exit: { price: o.avgPrice, proceeds: o.cumExecValue * (1 - FEE) } };
+        return { status: "filled", exit: { price: o.avgPrice, proceeds: o.cumExecValue * (1 - FEE), qty: o.cumExecQty } };
       }
       if (["Cancelled", "Rejected", "Deactivated"].includes(o.orderStatus)) return { status: "missing" };
       return { status: "active" };

@@ -20,10 +20,11 @@ import {
 import { WARMUP, analyze } from "./engine/analysis";
 import { decide } from "./engine/decide";
 import { getProfile } from "./engine/profiles";
-import { initialStop, positionSize, updateStop } from "./engine/risk";
+import { BREAKEVEN, canSplit, initialStop, nextStop, positionSize, takeProfitPrice, timeStopHit } from "./engine/risk";
 import type { Candle } from "./engine/types";
 import { getFearGreed } from "./sentiment";
 import { sendTelegram } from "./telegram";
+import { loadTunings, retuneStale } from "./tuning";
 
 export interface CoinReport {
   symbol: string;
@@ -89,12 +90,13 @@ export async function runTick(opts: { manual?: boolean } = {}): Promise<TickRepo
     const closedNow = new Set<string>();
     const closePosition = async (pos: Position, exit: Exit, reason: string) => {
       closedNow.add(pos.symbol);
-      const pnl = exit.proceeds - pos.cost;
+      const total = (pos.realized ?? 0) + exit.proceeds;
+      const pnl = total - pos.cost;
       await updatePosition(pos.id, {
         status: "closed",
         closed_at: new Date().toISOString(),
         exit_price: exit.price,
-        proceeds: exit.proceeds,
+        proceeds: total,
         pnl,
         exit_reason: reason,
       });
@@ -122,6 +124,15 @@ export async function runTick(opts: { manual?: boolean } = {}): Promise<TickRepo
     }
 
     const recent = await closedPositions(settings.mode, 20);
+
+    // Keep each coin's settings fresh (a couple of coins per run).
+    const tunings = await loadTunings();
+    try {
+      const retuned = await retuneStale(settings.symbols, profile, tunings);
+      if (retuned.length) await logEvent("info", `Re-tuned settings for ${retuned.join(", ")}`);
+    } catch (e) {
+      messages.push(`Tuning skipped: ${(e as Error).message}`);
+    }
     const coins: CoinReport[] = [];
     let btcContext: { regime: string; change24h: number } | null = null;
     if (market.BTCUSDT && market.BTCUSDT.candles.length > WARMUP) {
@@ -140,30 +151,70 @@ export async function runTick(opts: { manual?: boolean } = {}): Promise<TickRepo
       const atrNow = a.atr[i];
       let pos: Position | undefined = open.find((p) => p.symbol === sym);
 
-      // 1. Protect the open trade.
+      const tuned = tunings.get(sym);
+      const params = tuned?.params ?? profile.defaults;
+
+      // 1. Manage the open trade: stop-loss, take-profit, trailing stop, time stop.
       if (pos) {
+        const posParams = pos.params ?? profile.defaults;
+        const stopName = pos.tp_done ? "trailing stop" : "stop-loss";
         const stopState = await broker.checkStop(pos);
         if (stopState.status === "filled") {
-          await closePosition(pos, stopState.exit, "stop-loss");
+          await closePosition(pos, stopState.exit, stopName);
           pos = undefined;
         } else if (price <= pos.stop_price) {
-          await closePosition(pos, await broker.sell(pos, price), "stop-loss");
+          await closePosition(pos, await broker.sell(pos, price), stopName);
           pos = undefined;
+        } else if (!pos.tp_done && pos.take_profit_price && price >= pos.take_profit_price) {
+          if (canSplit(pos.qty * price, await broker.minOrderUsd(sym))) {
+            // Bank half the gain; the rest is protected at break-even and trails the price.
+            const exit = await broker.sell(pos, price, pos.qty / 2);
+            const newStop = Math.max(pos.stop_price, pos.entry_price * BREAKEVEN);
+            const remaining = pos.qty - exit.qty;
+            let stopId: string | null = null;
+            try {
+              stopId = await broker.placeStop(sym, remaining, newStop);
+            } catch (e) {
+              await alert("warn", `Could not place the new stop-loss for ${sym} (${(e as Error).message}). The bot will watch it instead.`);
+            }
+            const patch: Partial<Position> = {
+              qty: remaining,
+              realized: (pos.realized ?? 0) + exit.proceeds,
+              tp_done: true,
+              stop_price: newStop,
+              stop_order_id: stopId,
+              highest_price: Math.max(pos.highest_price, price),
+            };
+            await updatePosition(pos.id, patch);
+            cash += exit.proceeds;
+            const gain = exit.proceeds - pos.cost * (exit.qty / pos.qty);
+            await alert("trade", `TOOK PROFIT on half of ${sym} at ${exit.price} (+${usd(gain)}). The rest can't lose now - its stop is at break-even and follows the price up.`);
+            pos = { ...pos, ...patch };
+          } else {
+            await closePosition(pos, await broker.sell(pos, price), "take-profit");
+            pos = undefined;
+          }
         } else {
           const highest = Math.max(pos.highest_price, price);
-          const newStop = updateStop({ entry: pos.entry_price, stop: pos.stop_price, highest, atr: atrNow, profile });
-          const patch: Partial<Position> = { highest_price: highest };
-          if (stopState.status === "missing" || newStop - pos.stop_price >= 0.25 * atrNow) {
-            patch.stop_price = newStop;
-            patch.stop_order_id = await broker.moveStop(pos, newStop);
+          const hoursOpen = (Date.now() - Date.parse(pos.opened_at)) / 3600_000;
+          if (timeStopHit({ hoursOpen, price, entry: pos.entry_price, initialStop: pos.initial_stop ?? pos.stop_price, params: posParams, tpDone: pos.tp_done })) {
+            await closePosition(pos, await broker.sell(pos, price), `time stop (no progress in ${posParams.maxHoldHours}h)`);
+            pos = undefined;
+          } else {
+            const newStop = nextStop({ entry: pos.entry_price, stop: pos.stop_price, highest, atr: atrNow, params: posParams, tpDone: pos.tp_done });
+            const patch: Partial<Position> = { highest_price: highest };
+            if (stopState.status === "missing" || newStop - pos.stop_price >= 0.25 * atrNow) {
+              patch.stop_price = newStop;
+              patch.stop_order_id = await broker.moveStop(pos, newStop);
+            }
+            await updatePosition(pos.id, patch);
+            pos = { ...pos, ...patch };
           }
-          await updatePosition(pos.id, patch);
-          pos = { ...pos, ...patch };
         }
       }
 
       // 2. Ask the strategies.
-      const d = decide(a, i, profile, { inPosition: !!pos, fng });
+      const d = decide(a, i, profile, { inPosition: !!pos, fng, params });
       await db().from("signals").upsert({
         symbol: sym,
         updated_at: new Date().toISOString(),
@@ -181,7 +232,11 @@ export async function runTick(opts: { manual?: boolean } = {}): Promise<TickRepo
       const report: CoinReport = { symbol: sym, price, regime: d.regime, combined: d.combined, threshold: d.threshold, outcome: d.reason };
       coins.push(report);
       if (closedNow.has(sym)) report.outcome = "Just sold - waiting before trading this coin again";
-      else if (pos) report.outcome = `Holding. Stop-loss at ${pos.stop_price.toPrecision(6)}`;
+      else if (pos) {
+        report.outcome = pos.tp_done
+          ? `Holding the second half risk-free. Stop at ${pos.stop_price.toPrecision(6)}`
+          : `Holding. Target ${pos.take_profit_price?.toPrecision(6) ?? "-"}, stop-loss ${pos.stop_price.toPrecision(6)}`;
+      }
 
       if (pos && d.action === "exit") {
         await closePosition(pos, await broker.sell(pos, price), d.reason);
@@ -199,19 +254,37 @@ export async function runTick(opts: { manual?: boolean } = {}): Promise<TickRepo
         report.outcome = `Buy signal, but already holding ${profile.maxOpenPositions} trades`;
         continue;
       }
-      const last = recent.find((p) => p.symbol === sym);
+      if (tuned && !tuned.active) {
+        report.outcome = `Buy signal ignored: ${tuned.reason}`;
+        continue;
+      }
+      const coinTrades = recent.filter((p) => p.symbol === sym);
+      const last = coinTrades[0];
       if (last?.closed_at && Date.now() - Date.parse(last.closed_at) < profile.cooldownHours * 3600_000) {
         report.outcome = "Buy signal, but cooling down after the last trade";
         continue;
       }
+      // Losing-streak brake: two losses in a row on a coin -> rest it for a day.
+      if (
+        coinTrades.length >= 2 &&
+        (coinTrades[0].pnl ?? 0) < 0 &&
+        (coinTrades[1].pnl ?? 0) < 0 &&
+        Date.now() - Date.parse(coinTrades[0].closed_at!) < 24 * 3600_000
+      ) {
+        report.outcome = "Buy signal, but resting this coin for 24h after two losses in a row";
+        continue;
+      }
 
-      let stop = initialStop(price, atrNow, profile);
+      let stop = initialStop(price, atrNow, params);
       const minOrderUsd = await broker.minOrderUsd(sym);
       let spend = positionSize({ equity, cash, entry: price, stop, profile, minOrderUsd });
       if (spend <= 0) {
         report.outcome = "Buy signal, but the balance is too small for a safe trade";
         continue;
       }
+      // After three losses in a row anywhere, trade half size until a win.
+      const cold = recent.length >= 3 && recent.slice(0, 3).every((p) => (p.pnl ?? 0) < 0);
+      if (cold) spend = Math.max(minOrderUsd, spend * 0.5);
 
       // 4. Second opinion from Opus 5.5 (it can only veto, tighten the stop or shrink the size).
       const gate = await aiGate(settings, {
@@ -221,7 +294,8 @@ export async function runTick(opts: { manual?: boolean } = {}): Promise<TickRepo
         fng,
         btc: sym === "BTCUSDT" ? null : btcContext,
         recentTrades: recent.slice(0, 8),
-        proposal: { entry: price, stop, spendUsd: spend, equityUsd: equity },
+        proposal: { entry: price, stop, takeProfit: takeProfitPrice(price, stop, params), spendUsd: spend, equityUsd: equity },
+        tuningNote: tuned ? `${tuned.reason}. Out-of-sample return on the last 18 days: ${tuned.stats.testReturnPct.toFixed(1)}%` : "Not tuned yet (using defaults)",
         candleTime: candles[i].t,
       });
       let aiNote = "";
@@ -246,6 +320,7 @@ export async function runTick(opts: { manual?: boolean } = {}): Promise<TickRepo
       const fill = await broker.buy(sym, spend, price);
       // Keep the same stop distance relative to the actual fill price.
       const fillStop = fill.price - (price - stop);
+      const target = takeProfitPrice(fill.price, fillStop, params);
       let stopOrderId: string | null = null;
       try {
         stopOrderId = await broker.placeStop(sym, fill.qty, fillStop);
@@ -262,13 +337,16 @@ export async function runTick(opts: { manual?: boolean } = {}): Promise<TickRepo
         highest_price: fill.price,
         stop_order_id: stopOrderId,
         signal: d,
+        take_profit_price: target,
+        initial_stop: fillStop,
+        params,
       });
       cash -= fill.cost;
       open = [...open, { symbol: sym } as Position];
       report.outcome = `BOUGHT ${usd(fill.cost)} at ${fill.price}`;
       await alert(
         "trade",
-        `BOUGHT ${sym}: ${usd(fill.cost)} at ${fill.price}. Stop-loss ${fillStop.toFixed(4)} (max loss ~${usd(fill.cost * (1 - fillStop / fill.price))}). Why: ${d.reason}.${aiNote}`,
+        `BOUGHT ${sym}: ${usd(fill.cost)} at ${fill.price}. Target ${target.toPrecision(6)}, stop-loss ${fillStop.toPrecision(6)} (max loss ~${usd(fill.cost * (1 - fillStop / fill.price))}).${cold ? " Half size after a losing streak." : ""} Why: ${d.reason}.${aiNote}`,
       );
     }
 

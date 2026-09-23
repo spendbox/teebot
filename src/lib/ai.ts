@@ -42,7 +42,8 @@ export interface ReviewInput {
   fng: number | null;
   btc?: { regime: string; change24h: number } | null;
   recentTrades: { symbol: string; pnl: number | null; exit_reason: string | null }[];
-  proposal: { entry: number; stop: number; spendUsd: number; equityUsd: number };
+  proposal: { entry: number; stop: number; takeProfit?: number; spendUsd: number; equityUsd: number };
+  tuningNote?: string;
 }
 
 export function buildPrompt(r: ReviewInput): string {
@@ -64,12 +65,13 @@ export function buildPrompt(r: ReviewInput): string {
 Coin: ${r.symbol}
 Entry (market): ${price}
 Proposed stop-loss: ${r.proposal.stop.toFixed(decimals)} (${pct(1 - r.proposal.stop / price)} below entry)
-Position: $${r.proposal.spendUsd.toFixed(2)} of $${r.proposal.equityUsd.toFixed(2)} account; max loss at stop ≈ $${riskUsd.toFixed(2)}
+${r.proposal.takeProfit ? `Take-profit target: ${r.proposal.takeProfit.toFixed(decimals)} (half is sold there, the rest trails with a break-even stop)\n` : ""}Position: $${r.proposal.spendUsd.toFixed(2)} of $${r.proposal.equityUsd.toFixed(2)} account; max loss at stop ≈ $${riskUsd.toFixed(2)}
 
 ## Engine view
 Market type: ${d.regime}
 Combined signal: ${d.combined.toFixed(2)} (needed ${d.threshold.toFixed(2)}), strategies agreeing: ${d.confirmations}
 Strategy scores (-1..1): ${JSON.stringify(Object.fromEntries(Object.entries(d.scores).map(([k, v]) => [k, +v.toFixed(2)])))}
+Coin settings: ${r.tuningNote ?? "defaults"}
 Strategy trust weights (from recent after-fee performance): ${JSON.stringify(Object.fromEntries(Object.entries(d.weights).map(([k, v]) => [k, +v.toFixed(2)])))}
 
 ## Indicators (1h)

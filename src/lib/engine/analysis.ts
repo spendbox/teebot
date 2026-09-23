@@ -1,7 +1,7 @@
 import { adx, atr, clamp, ema, priorHigh, priorLow, rollingMedian, rsi, sma, stdev } from "./indicators";
 import type { Candle, Regime, StrategyName } from "./types";
 
-export const STRATEGIES: StrategyName[] = ["trend", "meanReversion", "breakout"];
+export const STRATEGIES: StrategyName[] = ["trend", "meanReversion", "breakout", "pullback"];
 
 // Enough history for the 200-candle trend line plus the adaptive window.
 export const WARMUP = 250;
@@ -39,6 +39,7 @@ export function analyze(candles: Candle[]): Analysis {
   const trend = new Array<number>(n).fill(0);
   const meanReversion = new Array<number>(n).fill(0);
   const breakout = new Array<number>(n).fill(0);
+  const pullback = new Array<number>(n).fill(0);
   const regime = new Array<Regime>(n).fill("range");
 
   for (let i = 0; i < n; i++) {
@@ -67,6 +68,19 @@ export function analyze(candles: Candle[]): Analysis {
       breakout[i] = half > 0 ? clamp(((c[i] - mid) / half) * 0.3, -0.3, 0.3) : 0;
     }
 
+    // Pullback buyer: in an uptrend, buy the dip back to the 20/50 averages once
+    // a candle closes green again. This setup fires often and wins often.
+    const upTrend = ema50[i] > ema200[i] && c[i] > ema200[i];
+    if (upTrend && i >= 3) {
+      const recentLow = Math.min(l[i], l[i - 1], l[i - 2]);
+      const touched = recentLow <= ema20[i] + 0.3 * a && recentLow >= ema50[i] - 1.0 * a;
+      const turningUp = c[i] > candles[i].o && c[i] > c[i - 1];
+      if (touched && turningUp && rsi14[i] >= 35 && rsi14[i] <= 60) pullback[i] = 0.9;
+      else if (touched && rsi14[i] < 45) pullback[i] = 0.4;
+    } else if (c[i] < ema50[i] - a) {
+      pullback[i] = -0.5;
+    }
+
     // Market type.
     if (!Number.isNaN(atrPctMedian[i]) && atrPct[i] > 2 * atrPctMedian[i]) {
       regime[i] = "chaotic";
@@ -79,39 +93,74 @@ export function analyze(candles: Candle[]): Analysis {
     }
   }
 
-  return { candles, atr: atr14, regime, scores: { trend, meanReversion, breakout } };
+  return { candles, atr: atr14, regime, scores: { trend, meanReversion, breakout, pullback } };
 }
 
-const ADAPT_WINDOW = 200;
-const COST_PER_SWITCH = 0.002; // fee + slippage for a full in/out
+const ADAPT_WINDOW = 300; // ~12 days of hourly candles
+const HORIZON = 6; // judge each buy signal by the next 6 hours
+const COST = 0.002; // fees + slippage for a round trip
+const MIN_SAMPLES = 5;
 
-// Score each strategy by how well following it would have done over the
-// recent window (risk-adjusted, after costs). Strategies that have been losing
-// get zero weight; if none are working, all weights are zero and the bot sits out.
+// Score each strategy by whether its recent buy signals were actually followed
+// by gains (after costs), weighted by signal strength and adjusted for
+// consistency. Only outcomes already known at candle i are used. Strategies
+// that have been losing get zero weight; if none are working, the bot sits out.
 export function adaptiveWeights(a: Analysis, i: number): Record<StrategyName, number> {
   const c = a.candles;
-  const start = Math.max(1, i - ADAPT_WINDOW);
-  const perf: Record<StrategyName, number> = { trend: 0, meanReversion: 0, breakout: 0 };
+  const start = Math.max(0, i - ADAPT_WINDOW);
+  const perf: Record<StrategyName, number> = { trend: 0, meanReversion: 0, breakout: 0, pullback: 0 };
 
   for (const s of STRATEGIES) {
     const sc = a.scores[s];
-    const rets: number[] = [];
-    let prevExposure = 0;
-    for (let j = start; j < i; j++) {
-      const exposure = clamp(sc[j], 0, 1); // long-only: negative score = in cash
-      const r = c[j + 1].c / c[j].c - 1;
-      rets.push(exposure * r - Math.abs(exposure - prevExposure) * COST_PER_SWITCH);
-      prevExposure = exposure;
+    let n = 0;
+    let sum = 0;
+    let sumSq = 0;
+    for (let j = start; j + HORIZON <= i; j++) {
+      if (sc[j] <= 0.2) continue;
+      const r = sc[j] * (c[j + HORIZON].c / c[j].c - 1 - COST);
+      n++;
+      sum += r;
+      sumSq += r * r;
     }
-    if (rets.length < 20) continue;
-    const mean = rets.reduce((x, y) => x + y, 0) / rets.length;
-    const sd = Math.sqrt(rets.reduce((x, y) => x + (y - mean) ** 2, 0) / rets.length);
-    perf[s] = sd > 0 ? (mean / sd) * Math.sqrt(rets.length) : 0;
+    if (n < MIN_SAMPLES) continue;
+    const mean = sum / n;
+    const sd = Math.sqrt(Math.max(0, sumSq / n - mean * mean));
+    perf[s] = sd > 0 ? (mean / sd) * Math.sqrt(n) : 0;
   }
 
   const positive = STRATEGIES.map((s) => Math.max(0, perf[s]));
   const total = positive.reduce((x, y) => x + y, 0);
-  const weights = { trend: 0, meanReversion: 0, breakout: 0 };
+  const weights: Record<StrategyName, number> = { trend: 0, meanReversion: 0, breakout: 0, pullback: 0 };
   if (total > 0) STRATEGIES.forEach((s, k) => (weights[s] = positive[k] / total));
   return weights;
+}
+
+export interface Signals {
+  combined: number[];
+  confirmations: number[];
+  anyWeight: boolean[];
+}
+
+// Combined signal for every candle from `from` onwards. It depends only on past
+// candles, so a backtest or the tuner can compute it once and replay many settings.
+export function precomputeSignals(a: Analysis, from = WARMUP): Signals {
+  const n = a.candles.length;
+  const combined = new Array<number>(n).fill(0);
+  const confirmations = new Array<number>(n).fill(0);
+  const anyWeight = new Array<boolean>(n).fill(false);
+  for (let i = Math.max(from, 1); i < n; i++) {
+    const w = adaptiveWeights(a, i);
+    let sum = 0;
+    let conf = 0;
+    let any = false;
+    for (const s of STRATEGIES) {
+      sum += w[s] * a.scores[s][i];
+      if (a.scores[s][i] > 0.2) conf++;
+      if (w[s] > 0) any = true;
+    }
+    combined[i] = sum;
+    confirmations[i] = conf;
+    anyWeight[i] = any;
+  }
+  return { combined, confirmations, anyWeight };
 }

@@ -1,4 +1,5 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import type { TradeParams } from "./engine/types";
 
 export interface Settings {
   id: number;
@@ -41,6 +42,11 @@ export interface Position {
   pnl: number | null;
   exit_reason: string | null;
   signal: unknown;
+  take_profit_price: number | null;
+  initial_stop: number | null;
+  tp_done: boolean;
+  realized: number; // USDT already received from selling part of the position
+  params: TradeParams | null;
 }
 
 let client: SupabaseClient | null = null;
@@ -91,7 +97,9 @@ export async function sumClosedPnl(mode: string): Promise<number> {
   return rows.reduce((s, r) => s + (r.pnl ?? 0), 0);
 }
 
-export async function insertPosition(p: Omit<Position, "id" | "opened_at" | "closed_at" | "exit_price" | "proceeds" | "pnl" | "exit_reason" | "status">): Promise<void> {
+export async function insertPosition(
+  p: Omit<Position, "id" | "opened_at" | "closed_at" | "exit_price" | "proceeds" | "pnl" | "exit_reason" | "status" | "tp_done" | "realized">,
+): Promise<void> {
   check(await db().from("positions").insert({ ...p, status: "open" }));
 }
 

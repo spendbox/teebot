@@ -9,7 +9,7 @@ export interface Candle {
 
 export type Regime = "uptrend" | "downtrend" | "range" | "chaotic";
 
-export type StrategyName = "trend" | "meanReversion" | "breakout";
+export type StrategyName = "trend" | "meanReversion" | "breakout" | "pullback";
 
 export interface RiskProfile {
   name: "cautious" | "balanced";
@@ -18,13 +18,26 @@ export interface RiskProfile {
   maxOpenPositions: number;
   dailyLossLimit: number; // fraction; no new entries for the rest of the UTC day
   maxDrawdown: number; // fraction from peak; kill switch
-  entryThreshold: number; // combined score needed to buy
   exitThreshold: number; // combined score at which to sell
   minConfirmations: number; // strategies that must independently agree
-  stopAtr: number; // initial stop distance in ATRs
-  trailAtr: number; // trailing stop distance in ATRs
-  breakevenAtr: number; // profit (in ATRs) after which stop moves to entry
   cooldownHours: number; // wait after closing a trade before re-entering
+  defaults: TradeParams; // used until a coin has been tuned
+}
+
+// Settings the bot re-tunes for each coin from its recent history.
+export interface TradeParams {
+  entryThreshold: number; // combined score needed to buy
+  stopAtr: number; // initial stop distance in ATRs
+  takeProfitR: number; // take profit when the gain reaches this multiple of the risk
+  trailAtr: number; // trailing stop distance in ATRs, after profit is taken
+  maxHoldHours: number; // exit a trade that goes nowhere after this long
+}
+
+export interface Tuning {
+  params: TradeParams;
+  active: boolean; // false = nothing worked recently on this coin, so don't trade it
+  reason: string;
+  stats: { trades: number; winRate: number; returnPct: number; testReturnPct: number; maxDrawdownPct: number };
 }
 
 export interface Decision {

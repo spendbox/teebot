@@ -4,7 +4,7 @@ import { backtest } from "@/lib/engine/backtest";
 import { decide } from "@/lib/engine/decide";
 import { atr, ema, rsi, sma } from "@/lib/engine/indicators";
 import { PROFILES } from "@/lib/engine/profiles";
-import { initialStop, positionSize, updateStop } from "@/lib/engine/risk";
+import { initialStop, nextStop, positionSize } from "@/lib/engine/risk";
 import type { Candle } from "@/lib/engine/types";
 import { roundStep, sign } from "@/lib/bybit";
 
@@ -52,34 +52,35 @@ describe("indicators", () => {
 
 describe("risk", () => {
   it("risks about 1% of the balance per trade", () => {
-    const stop = initialStop(100, 1.5, cautious); // 3% below
+    const stop = initialStop(100, 1.5, cautious.defaults); // 3% below
     const spend = positionSize({ equity: 1000, cash: 1000, entry: 100, stop, profile: cautious, minOrderUsd: 5 });
     expect(spend * ((100 - stop) / 100)).toBeCloseTo(10);
   });
 
   it("never puts more than 35% of the balance into one coin", () => {
-    const stop = initialStop(100, 0.1, cautious); // 1% floor
+    const stop = initialStop(100, 0.1, cautious.defaults); // 1% floor
     const spend = positionSize({ equity: 1000, cash: 1000, entry: 100, stop, profile: cautious, minOrderUsd: 5 });
     expect(spend).toBeCloseTo(350);
   });
 
   it("works with a $20 account and the exchange minimum", () => {
-    const stop = initialStop(100, 1.5, cautious);
+    const stop = initialStop(100, 1.5, cautious.defaults);
     const spend = positionSize({ equity: 20, cash: 20, entry: 100, stop, profile: cautious, minOrderUsd: 5 });
     expect(spend).toBeGreaterThanOrEqual(5);
     expect(spend * 0.03).toBeLessThanOrEqual(20 * 0.01 * 1.5);
   });
 
   it("skips trades when the minimum order would risk too much", () => {
-    const stop = initialStop(100, 4, cautious); // 8% cap
+    const stop = initialStop(100, 4, cautious.defaults); // 8% cap
     expect(positionSize({ equity: 20, cash: 20, entry: 100, stop, profile: cautious, minOrderUsd: 10 })).toBe(0);
   });
 
-  it("only ever moves the stop up", () => {
-    const moved = updateStop({ entry: 100, stop: 97, highest: 110, atr: 2, profile: cautious });
+  it("only moves the stop up, and only after profit has been taken", () => {
+    const p = cautious.defaults;
+    expect(nextStop({ entry: 100, stop: 97, highest: 110, atr: 2, params: p, tpDone: false })).toBe(97);
+    const moved = nextStop({ entry: 100, stop: 97, highest: 110, atr: 2, params: p, tpDone: true });
     expect(moved).toBeCloseTo(105);
-    expect(updateStop({ entry: 100, stop: moved, highest: 104, atr: 2, profile: cautious })).toBe(moved);
-    expect(updateStop({ entry: 100, stop: 97, highest: 101, atr: 2, profile: cautious })).toBe(97);
+    expect(nextStop({ entry: 100, stop: moved, highest: 104, atr: 2, params: p, tpDone: true })).toBe(moved);
   });
 });
 
@@ -130,7 +131,7 @@ describe("backtest", () => {
     { hours: 600, drift: -0.0015, vol: 0.015 },
     { hours: 400, drift: 0.001, vol: 0.01 },
   ]);
-  const r = backtest(candles, cautious, { startBalance: 20 });
+  const r = backtest(candles, cautious, { startBalance: 20, tuneWindow: 300 });
 
   it("trades and stays within the drawdown limit", () => {
     expect(candles.length).toBeGreaterThan(WARMUP);
@@ -148,7 +149,7 @@ describe("backtest", () => {
       { hours: 400, drift: 0.0005, vol: 0.01 },
       { hours: 800, drift: -0.002, vol: 0.02 },
     ]);
-    const c = backtest(crash, cautious, { startBalance: 20 });
+    const c = backtest(crash, cautious, { startBalance: 20, tuneWindow: 300 });
     expect(c.buyHoldPct).toBeLessThan(-50);
     expect(c.returnPct).toBeGreaterThan(-15);
   });
