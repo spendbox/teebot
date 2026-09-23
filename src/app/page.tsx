@@ -2,6 +2,7 @@ import { getWallet } from "@/lib/bybit";
 import { closedPositions, db, getSettings, openPositions, type Position } from "@/lib/db";
 import { toggleBot } from "./actions";
 import { BreakoutPanel } from "./breakout-panel";
+import { EthPanel } from "./eth-panel";
 import { LiveBar, RunNow, SubmitButton } from "./live";
 import { EquityChart, Message, Nav, REGIME_TEXT, money, price, signedMoney } from "./ui";
 
@@ -148,6 +149,8 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
           </section>
 
           {breakout && <BreakoutPanel settings={s} equity={equity} openTrade={open[0]} />}
+
+          {breakout && <EthPanel settings={s} />}
 
           {!breakout && (
             <div className="coins">

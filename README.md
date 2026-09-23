@@ -153,6 +153,30 @@ In 20,000 simulated runs of the tested trades, a working bot fell this far only 
 When it triggers you get a Telegram message and a red banner, and (by default) **new trades pause**. Any open trade still finishes normally.
 Review it, then press **"I've reviewed it - clear the warning and resume"** in Settings. You can switch it to "only alert me" there.
 
+### Ethereum day-trader (runs next to Bitcoin)
+
+Run [`supabase/upgrade-eth.sql`](supabase/upgrade-eth.sql) once: Supabase → **SQL Editor** → **New query** → paste → **Run**.
+(Skip this if you set up Supabase after this file was added. It's already in `schema.sql`.)
+
+It starts in **practice mode** with its own pretend $100 (change it in **Settings → Ethereum day-trader**).
+It uses the same **Start/Stop** switch as the Bitcoin bot and appears on the dashboard as **Today · Ethereum**.
+
+How it trades:
+- Only on days after Ethereum closed **above its 20-day average**.
+- Buys when Ethereum rises to **today's open + 0.8 × yesterday's high-low range**.
+- Scores the setup out of 4: **Bitcoin is breaking out too**, **before 12:00 UTC**, **Ethereum below its 100-day average**, **50-day average not rising** (Ethereum's best moves come early in a recovery).
+- Score 2 → 1x, 3 → 2x, 4 → 3x. 0-1 → skip.
+- Emergency stop **1 × yesterday's range below the buy, kept between 3% and 8%** (placed on Bybit with real money).
+- Always sold by **23:57 UTC**. At most one Ethereum trade a day.
+- If its money falls 50% from its peak it closes its trade and switches itself off.
+
+Tested (2022-2026, never used while building): about **+38%/yr, worst dip 15%, no losing year**, ~19 trades a year.
+Realistic expectation: **+15% to +35% a year**. Details: [`docs/research/ethereum-day-trader.md`](docs/research/ethereum-day-trader.md).
+
+**Real money later:** Settings → Ethereum day-trader → type `LIVE` → **Use real money for Ethereum**.
+Choose what share of the Bybit balance it may use (25/50/75%, default 50%). When both bots use real money,
+Bitcoin uses the rest. Your API key needs the same **Contract → Orders and Positions** permission (nothing new).
+
 ### If something goes wrong
 
 - **"Bybit refused the connection from this server's location":** Bybit blocks some countries, such as the USA. This project runs from Frankfurt (`fra1`). In GitHub, edit [`vercel.json`](vercel.json) and change `fra1` to another region such as `dub1` (Dublin) or `cpt1` (Cape Town). Commit, and Vercel redeploys automatically.

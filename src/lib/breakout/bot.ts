@@ -16,6 +16,7 @@ import {
   type DayPlan,
 } from "./strategy";
 import { checkWarning } from "./warning";
+import { btcShare } from "../eth/bot";
 
 export const SYMBOL = "BTCUSDT";
 const DAY = 86_400_000;
@@ -174,7 +175,7 @@ export async function runBreakoutTick(settings: Settings, opts: { manual?: boole
         await alert("info", `BTC broke out, but the setup scored ${score}/7, so the bot skipped it (it only trades 5+).`);
       } else {
         const rules = await bybit.getFuturesRules(SYMBOL);
-        const notional = equity * leverage;
+        const notional = equity * btcShare(settings) * leverage; // its share when the Ethereum trader also uses real money
         const qty = Math.floor(notional / price / rules.qtyStep) * rules.qtyStep;
         if (qty < rules.minOrderQty || qty * price < rules.minNotional) {
           status = "skipped-too-small";

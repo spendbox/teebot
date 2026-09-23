@@ -1,7 +1,7 @@
 # Ethereum day-trader (researched, not built yet)
 
-Status: **parked**. Researched and backtested; ready to build alongside the Bitcoin
-day-trader when wanted. Nothing here is running.
+Status: **built** (`src/lib/eth/`), starts in practice mode; real money can be switched on in
+Settings. Runs next to the Bitcoin day-trader.
 
 ## The rules
 
@@ -18,7 +18,8 @@ midnight UTC), but tuned to how Ethereum behaves.
    - ETH is **below** its 100-day average (early in a recovery, not late in a rally).
    - The 50-day average is **not** rising (vs 5 days earlier), for the same reason.
 4. **Size by score:** 0-1 skip, 2 → 1x, 3 → 2x, 4 → 3x.
-5. **Emergency stop:** entry − 1 × yesterday's range, but never more than 8% below entry.
+5. **Emergency stop:** entry − 1 × yesterday's range, kept between 3% and 8% below entry
+   (the 3% minimum was added after checking the worst case for stops inside the buying hour).
 6. **No weak-volume exit** (unlike Bitcoin: on ETH it sold too many trades that recovered).
 7. **Always flat by 23:57 UTC.** At most one trade a day.
 
