@@ -1,3 +1,4 @@
+import { getWallet } from "@/lib/bybit";
 import { closedPositions, db, getSettings, openPositions, type Position } from "@/lib/db";
 import { toggleBot } from "./actions";
 import { BreakoutPanel } from "./breakout-panel";
@@ -14,6 +15,19 @@ interface SignalRow {
   price: number;
   combined: number;
   threshold: number;
+}
+
+// Real-money balance straight from Bybit, so it shows even while the bot is paused.
+async function liveBalance(): Promise<{ equity: number | null; error: string | null }> {
+  try {
+    const w = await Promise.race([
+      getWallet(),
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error("Bybit took too long to answer")), 5000)),
+    ]);
+    return { equity: w.totalEquity, error: null };
+  } catch (e) {
+    return { equity: null, error: (e as Error).message };
+  }
 }
 
 const when = (iso: string | null) =>
@@ -48,7 +62,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
   const breakout = (s.strategy ?? "breakout") === "breakout";
   const strat = breakout ? "breakout" : "classic";
   const since = new Date(Date.now() - 30 * 86400_000).toISOString();
-  const [open, closed, priceRes, snapsRes, eventsRes, checksRes] = await Promise.all([
+  const [open, closed, priceRes, snapsRes, eventsRes, checksRes, wallet] = await Promise.all([
     openPositions(s.mode, strat),
     closedPositions(s.mode, 15, strat),
     breakout
@@ -57,6 +71,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
     db().from("equity_snapshots").select("created_at,equity").eq("mode", s.mode).gte("created_at", since).order("created_at").limit(5000),
     db().from("events").select("*").neq("level", "check").order("id", { ascending: false }).limit(20),
     db().from("events").select("id,created_at,message", { count: "exact" }).eq("level", "check").order("id", { ascending: false }).limit(60),
+    s.mode === "live" ? liveBalance() : Promise.resolve({ equity: null, error: null }),
   ]);
 
   const signals = breakout ? [] : ((priceRes.data ?? []) as SignalRow[]).sort((a, b) => s.symbols.indexOf(a.symbol) - s.symbols.indexOf(b.symbol));
@@ -67,8 +82,9 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
   const checks = checksRes.data ?? [];
   const checkCount = checksRes.count ?? checks.length;
 
-  const equity = snaps.length ? snaps[snaps.length - 1].equity : s.mode === "paper" ? s.paper_start_balance : null;
-  const start = s.mode === "paper" ? s.paper_start_balance : (snaps[0]?.equity ?? null);
+  const lastSnap = snaps.length ? snaps[snaps.length - 1].equity : null;
+  const equity = s.mode === "live" ? (wallet.equity ?? lastSnap) : (lastSnap ?? s.paper_start_balance);
+  const start = s.mode === "paper" ? s.paper_start_balance : (s.run_start_equity ?? snaps[0]?.equity ?? equity);
   const total = equity != null && start != null ? equity - start : null;
   const totalPct = total != null && start ? (total / start) * 100 : null;
   const today = equity != null && s.day_start_equity != null ? equity - s.day_start_equity : null;
@@ -92,6 +108,11 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
             <strong>Early warning:</strong> {s.warning_reason}.{" "}
             {(s.warning_action ?? "pause") === "pause" ? "New trades are paused." : "The bot is still trading."}{" "}
             <a href="/settings#early-warning">Review it in Settings</a>
+          </div>
+        )}
+        {s.mode === "live" && wallet.error && (
+          <div className="notice">
+            Couldn&apos;t read your Bybit balance: {wallet.error}. Check your API key in Settings → Test Bybit connection.
           </div>
         )}
         {s.last_error && <div className="notice">Last check had a problem: {s.last_error}</div>}
