@@ -10,6 +10,7 @@ import {
   getSettings,
   insertPosition,
   logEvent,
+  trimEvents,
   openPositions,
   releaseLock,
   updatePosition,
@@ -57,7 +58,9 @@ export async function runTick(opts: { manual?: boolean } = {}): Promise<TickRepo
   if ((settings.strategy ?? "breakout") === "breakout") {
     if (!(await acquireLock(50))) return { status: "busy", messages: ["Another run is in progress"] };
     try {
-      return await runBreakoutTick(settings, opts);
+      const report = await runBreakoutTick(settings, opts);
+      await logCheck(report);
+      return report;
     } catch (e) {
       const msg = (e as Error).message;
       if (msg !== settings.last_error) {
@@ -76,7 +79,25 @@ export async function runTick(opts: { manual?: boolean } = {}): Promise<TickRepo
     return { status: "ran", messages: ["Classic strategy runs every 5 minutes"] };
   }
   if (!(await acquireLock())) return { status: "busy", messages: ["Another run is in progress"] };
+  const report = await runClassicTick(settings);
+  await logCheck(report);
+  return report;
+}
 
+// One line in the activity log per market check; the log is capped at 5,000 rows.
+async function logCheck(report: TickReport): Promise<void> {
+  try {
+    const summary = (report.coins ?? [])
+      .map((c) => `${c.symbol.replace("USDT", "")} ${c.price >= 1000 ? Math.round(c.price).toLocaleString("en-US") : c.price}: ${c.outcome}`)
+      .join(" | ");
+    await logEvent("check", summary || report.messages.join(" | ") || "Checked the market");
+    await trimEvents();
+  } catch {
+    // Logging must never break trading.
+  }
+}
+
+async function runClassicTick(settings: Settings): Promise<TickReport> {
   const messages: string[] = [];
   const alert = async (level: "trade" | "warn" | "error", text: string) => {
     messages.push(text);

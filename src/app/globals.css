@@ -239,3 +239,21 @@ th { color: var(--muted); font-weight: 550; font-size: 12.5px; }
 .card h2 + p, .card h2 + form { margin-top: 10px; }
 select { width: 100%; }
 form.row select, form.row input { width: auto; }
+details.checks { margin-top: 12px; border-top: 1px solid var(--border); padding-top: 10px; }
+details.checks > summary { cursor: pointer; font-weight: 600; font-size: 14px; }
+.activity li.check { font-size: 12.5px; color: var(--muted); padding: 6px 0; }
+
+/* ---- Price charts ---- */
+.pchart { position: relative; width: 100%; margin-top: 12px; }
+.pchart svg { display: block; overflow: visible; }
+.pchart .grid { stroke: var(--border); stroke-width: 1; }
+.pchart .axis { fill: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+.pchart .reflabel { fill: var(--text); font-size: 11.5px; font-weight: 600; paint-order: stroke; stroke: var(--card); stroke-width: 4px; stroke-linejoin: round; }
+.pchart .gapbar { fill: var(--accent); opacity: 0.25; }
+.pchart .gaplabel { fill: var(--text); font-size: 12px; font-weight: 700; paint-order: stroke; stroke: var(--card); stroke-width: 4px; stroke-linejoin: round; }
+.pchart .crosshair { stroke: var(--muted); stroke-width: 1; }
+.ptip { position: absolute; top: 0; transform: translateX(-50%); background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 6px 10px; font-size: 12.5px; box-shadow: var(--shadow); pointer-events: none; white-space: nowrap; }
+.ptip-row, .plegend span { display: flex; align-items: center; gap: 6px; }
+.key { display: inline-block; width: 12px; height: 2px; border-radius: 1px; }
+.plegend { display: flex; gap: 16px; font-size: 12.5px; color: var(--muted); margin-top: 6px; }
+.explain { font-size: 13.5px; color: var(--muted); margin: 10px 0 0; }

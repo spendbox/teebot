@@ -107,8 +107,17 @@ export async function updatePosition(id: number, patch: Partial<Position>): Prom
   check(await db().from("positions").update(patch).eq("id", id));
 }
 
-export async function logEvent(level: "info" | "trade" | "warn" | "error", message: string): Promise<void> {
+export const EVENT_LIMIT = 5000;
+
+export async function logEvent(level: "info" | "trade" | "warn" | "error" | "check", message: string): Promise<void> {
   await db().from("events").insert({ level, message });
+}
+
+// Keeps the activity log at EVENT_LIMIT rows by deleting the oldest ones.
+export async function trimEvents(limit = EVENT_LIMIT): Promise<void> {
+  const { data } = await db().from("events").select("id").order("id", { ascending: false }).range(limit - 1, limit - 1);
+  const cutoff = data?.[0]?.id;
+  if (cutoff != null) await db().from("events").delete().lt("id", cutoff);
 }
 
 // Stops two overlapping runs from trading at the same time.
