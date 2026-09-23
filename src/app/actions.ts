@@ -23,7 +23,7 @@ export async function login(form: FormData) {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
     sameSite: "lax",
-    maxAge: 60 * 60 * 24 * 30,
+    maxAge: 60 * 60 * 24 * 180, // stay logged in on your phone for 6 months
     path: "/",
   });
   redirect("/");
