@@ -24,6 +24,7 @@ import { initialStop, positionSize, updateStop } from "./engine/risk";
 import type { Candle } from "./engine/types";
 import { getFearGreed } from "./sentiment";
 import { sendTelegram } from "./telegram";
+import { runBreakoutTick } from "./breakout/bot";
 
 export interface CoinReport {
   symbol: string;
@@ -46,12 +47,34 @@ export function getBroker(s: Settings): Broker {
   return s.mode === "live" ? liveBroker() : paperBroker(s.paper_start_balance);
 }
 
-// One pass of the bot. Supabase calls this every 5 minutes.
+// One pass of the bot. Supabase calls this every minute.
 export async function runTick(opts: { manual?: boolean } = {}): Promise<TickReport> {
   const settings = await getSettings();
   // "Run now" from the dashboard may test practice mode while the bot is off, never live.
   if (!settings.enabled && !(opts.manual && settings.mode === "paper")) return { status: "disabled", messages: ["Bot is switched off"] };
   if (settings.kill_switch) return { status: "disabled", messages: ["Safety shutdown is active - reset it in Settings"] };
+
+  if ((settings.strategy ?? "breakout") === "breakout") {
+    if (!(await acquireLock(50))) return { status: "busy", messages: ["Another run is in progress"] };
+    try {
+      return await runBreakoutTick(settings, opts);
+    } catch (e) {
+      const msg = (e as Error).message;
+      if (msg !== settings.last_error) {
+        await logEvent("error", `Bot error: ${msg}`);
+        await sendTelegram(settings.telegram_chat_id, `Bot error: ${msg}`);
+      }
+      await updateSettings({ last_error: msg, last_tick_at: new Date().toISOString() });
+      return { status: "error", messages: [msg] };
+    } finally {
+      await releaseLock();
+    }
+  }
+
+  // The classic strategy only needs to run every 5 minutes.
+  if (!opts.manual && settings.last_tick_at && Date.now() - Date.parse(settings.last_tick_at) < 4.5 * 60_000) {
+    return { status: "ran", messages: ["Classic strategy runs every 5 minutes"] };
+  }
   if (!(await acquireLock())) return { status: "busy", messages: ["Another run is in progress"] };
 
   const messages: string[] = [];

@@ -92,8 +92,14 @@ async function privatePost<T>(path: string, body: Record<string, unknown>): Prom
 // ---- Public market data ----
 
 // Bybit returns newest-first; we return oldest-first.
-export async function getKlines(symbol: string, interval = "60", limit = 1000, end?: number): Promise<Candle[]> {
-  const params: Record<string, string> = { category: "spot", symbol, interval, limit: String(limit) };
+export async function getKlines(
+  symbol: string,
+  interval = "60",
+  limit = 1000,
+  end?: number,
+  category: "spot" | "linear" = "spot",
+): Promise<Candle[]> {
+  const params: Record<string, string> = { category, symbol, interval, limit: String(limit) };
   if (end) params.end = String(end);
   const r = await publicGet<{ list: string[][] }>("/v5/market/kline", params);
   return r.list
@@ -237,4 +243,122 @@ export async function getOrder(symbol: string, orderId: string, isStop = false):
     }
   }
   return null;
+}
+
+// ---- Perpetual futures (category "linear", settled in USDT) ----
+
+export async function getFuturesHistory(symbol: string, days: number): Promise<Candle[]> {
+  const total = days * 24;
+  const out: Candle[] = [];
+  let end: number | undefined;
+  while (out.length < total) {
+    const batch = await getKlines(symbol, "60", 1000, end, "linear");
+    if (batch.length === 0) break;
+    out.unshift(...batch.filter((k) => out.length === 0 || k.t < out[0].t));
+    end = batch[0].t - 1;
+    if (batch.length < 1000) break;
+  }
+  return out.slice(-total);
+}
+
+export async function getFuturesPrice(symbol: string): Promise<number> {
+  const r = await publicGet<{ list: { lastPrice: string }[] }>("/v5/market/tickers", { category: "linear", symbol });
+  return +r.list[0].lastPrice;
+}
+
+export interface FuturesRules {
+  qtyStep: number;
+  minOrderQty: number;
+  minNotional: number;
+  tickSize: number;
+}
+
+export async function getFuturesRules(symbol: string): Promise<FuturesRules> {
+  const r = await publicGet<{
+    list: { lotSizeFilter: { qtyStep: string; minOrderQty: string; minNotionalValue?: string }; priceFilter: { tickSize: string } }[];
+  }>("/v5/market/instruments-info", { category: "linear", symbol });
+  const i = r.list[0];
+  if (!i) throw new BybitError(`Unknown futures symbol ${symbol}`);
+  return {
+    qtyStep: +i.lotSizeFilter.qtyStep,
+    minOrderQty: +i.lotSizeFilter.minOrderQty,
+    minNotional: +(i.lotSizeFilter.minNotionalValue ?? 5),
+    tickSize: +i.priceFilter.tickSize,
+  };
+}
+
+// The exchange leverage only sets how much margin is locked; the bot controls
+// its real exposure through the order size.
+export async function setFuturesLeverage(symbol: string, leverage: number): Promise<void> {
+  try {
+    await privatePost("/v5/position/set-leverage", {
+      category: "linear",
+      symbol,
+      buyLeverage: String(leverage),
+      sellLeverage: String(leverage),
+    });
+  } catch (e) {
+    // 110043 = leverage already set to this value
+    if (!(e instanceof BybitError && e.code === 110043)) throw e;
+  }
+}
+
+// Market buy with a stop-loss attached on Bybit itself.
+export async function openFuturesLong(symbol: string, qty: string, stopLoss: string): Promise<string> {
+  const r = await privatePost<{ orderId: string }>("/v5/order/create", {
+    category: "linear",
+    symbol,
+    side: "Buy",
+    orderType: "Market",
+    qty,
+    positionIdx: 0,
+    stopLoss,
+    tpslMode: "Full",
+    slTriggerBy: "LastPrice",
+  });
+  return r.orderId;
+}
+
+export async function closeFuturesLong(symbol: string, qty: string): Promise<string> {
+  const r = await privatePost<{ orderId: string }>("/v5/order/create", {
+    category: "linear",
+    symbol,
+    side: "Sell",
+    orderType: "Market",
+    qty,
+    positionIdx: 0,
+    reduceOnly: true,
+  });
+  return r.orderId;
+}
+
+export async function getFuturesPosition(symbol: string): Promise<{ size: number; avgPrice: number }> {
+  const r = await privateGet<{ list: { size: string; avgPrice: string }[] }>("/v5/position/list", { category: "linear", symbol });
+  const p = r.list[0];
+  return { size: +(p?.size ?? 0), avgPrice: +(p?.avgPrice ?? 0) };
+}
+
+export async function getFuturesOrder(symbol: string, orderId: string): Promise<OrderInfo | null> {
+  for (const path of ["/v5/order/realtime", "/v5/order/history"]) {
+    const r = await privateGet<{ list: { orderStatus: string; avgPrice: string; cumExecQty: string; cumExecValue: string }[] }>(path, {
+      category: "linear",
+      symbol,
+      orderId,
+    });
+    const o = r.list[0];
+    if (o) return { orderStatus: o.orderStatus, avgPrice: +o.avgPrice, cumExecQty: +o.cumExecQty, cumExecValue: +o.cumExecValue };
+  }
+  return null;
+}
+
+// Most recent closed trade on this symbol (used when Bybit's own stop-loss closed it).
+export async function getLastClosedPnl(symbol: string, since: number): Promise<{ exitPrice: number; pnl: number } | null> {
+  const r = await privateGet<{ list: { avgExitPrice: string; closedPnl: string; updatedTime: string }[] }>("/v5/position/closed-pnl", {
+    category: "linear",
+    symbol,
+    startTime: String(since),
+    limit: "5",
+  });
+  const x = r.list[0];
+  return x ? { exitPrice: +x.avgExitPrice, pnl: +x.closedPnl } : null;
 }

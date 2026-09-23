@@ -21,6 +21,8 @@ export interface Settings {
   ai_daily_limit: number;
   ai_calls_date: string | null;
   ai_calls_today: number;
+  strategy: "breakout" | "classic";
+  breakout_profile: "balanced" | "safer";
 }
 
 export interface Position {
@@ -41,6 +43,11 @@ export interface Position {
   pnl: number | null;
   exit_reason: string | null;
   signal: unknown;
+  strategy?: "breakout" | "classic";
+  leverage?: number | null;
+  score?: number | null;
+  entry_hour?: number | null;
+  volume_checked?: boolean;
 }
 
 let client: SupabaseClient | null = null;
@@ -68,24 +75,25 @@ export async function updateSettings(patch: Partial<Settings>): Promise<void> {
   check(await db().from("settings").update({ ...patch, updated_at: new Date().toISOString() }).eq("id", 1));
 }
 
-export async function openPositions(mode: string): Promise<Position[]> {
-  return check(await db().from("positions").select("*").eq("mode", mode).eq("status", "open")) as Position[];
+export async function openPositions(mode: string, strategy: "breakout" | "classic" = "classic"): Promise<Position[]> {
+  return check(await db().from("positions").select("*").eq("mode", mode).eq("strategy", strategy).eq("status", "open")) as Position[];
 }
 
-export async function closedPositions(mode: string, limit = 50): Promise<Position[]> {
+export async function closedPositions(mode: string, limit = 50, strategy: "breakout" | "classic" = "classic"): Promise<Position[]> {
   return check(
     await db()
       .from("positions")
       .select("*")
       .eq("mode", mode)
+      .eq("strategy", strategy)
       .eq("status", "closed")
       .order("closed_at", { ascending: false })
       .limit(limit),
   ) as Position[];
 }
 
-export async function sumClosedPnl(mode: string): Promise<number> {
-  const rows = check(await db().from("positions").select("pnl").eq("mode", mode).eq("status", "closed")) as {
+export async function sumClosedPnl(mode: string, strategy: "breakout" | "classic" = "classic"): Promise<number> {
+  const rows = check(await db().from("positions").select("pnl").eq("mode", mode).eq("strategy", strategy).eq("status", "closed")) as {
     pnl: number | null;
   }[];
   return rows.reduce((s, r) => s + (r.pnl ?? 0), 0);

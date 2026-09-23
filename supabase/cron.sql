@@ -1,4 +1,4 @@
--- Makes Supabase wake the bot every 5 minutes.
+-- Makes Supabase wake the bot every minute (the breakout strategy needs to react quickly).
 -- Before running: replace YOUR-APP with your Vercel address and
 -- YOUR_CRON_SECRET with the CRON_SECRET you set in Vercel.
 
@@ -9,7 +9,7 @@ select cron.unschedule('teebot-tick') where exists (select 1 from cron.job where
 
 select cron.schedule(
   'teebot-tick',
-  '*/5 * * * *',
+  '* * * * *',
   $$
   select net.http_post(
     url := 'https://YOUR-APP.vercel.app/api/tick',

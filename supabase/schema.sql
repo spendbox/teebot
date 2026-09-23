@@ -7,7 +7,7 @@ create table if not exists settings (
   mode text not null default 'paper' check (mode in ('paper', 'live')),
   risk_profile text not null default 'cautious',
   symbols text[] not null default '{BTCUSDT,ETHUSDT,SOLUSDT}',
-  paper_start_balance double precision not null default 20,
+  paper_start_balance double precision not null default 100,
   peak_equity double precision,
   day_start_equity double precision,
   day_start_date date,
@@ -74,7 +74,7 @@ create index if not exists equity_snapshots_idx on equity_snapshots (mode, creat
 
 -- AI reviewer (same as upgrade-ai.sql)
 
-alter table settings add column if not exists ai_enabled boolean not null default true;
+alter table settings add column if not exists ai_enabled boolean not null default false;
 alter table settings add column if not exists ai_daily_limit int not null default 4;
 alter table settings add column if not exists ai_calls_date date;
 alter table settings add column if not exists ai_calls_today int not null default 0;
@@ -100,6 +100,36 @@ create index if not exists ai_reviews_lookup_idx on ai_reviews (symbol, candle_t
 create index if not exists ai_reviews_created_idx on ai_reviews (created_at);
 
 
+-- Breakout day-trader (same as upgrade-breakout.sql)
+
+alter table settings add column if not exists strategy text not null default 'breakout';
+alter table settings add column if not exists breakout_profile text not null default 'balanced';
+
+alter table positions add column if not exists strategy text not null default 'classic';
+alter table positions add column if not exists leverage double precision;
+alter table positions add column if not exists score int;
+alter table positions add column if not exists entry_hour int;
+alter table positions add column if not exists volume_checked boolean not null default false;
+
+create table if not exists day_plans (
+  day date not null,
+  mode text not null,
+  updated_at timestamptz not null default now(),
+  status text not null,
+  eligible boolean not null,
+  open double precision,
+  trigger double precision,
+  price double precision,
+  score int,
+  leverage double precision,
+  clues jsonb,
+  note text,
+  primary key (day, mode)
+);
+
+-- The breakout strategy doesn't use the AI reviewer.
+update settings set ai_enabled = false where id = 1;
+
 -- Lock every table: only the server (which holds the secret key) can read or write.
 alter table settings enable row level security;
 alter table positions enable row level security;
@@ -107,3 +137,4 @@ alter table signals enable row level security;
 alter table events enable row level security;
 alter table equity_snapshots enable row level security;
 alter table ai_reviews enable row level security;
+alter table day_plans enable row level security;

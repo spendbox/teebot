@@ -7,7 +7,7 @@ import type { TickReport } from "@/lib/bot";
 import { runNowAction } from "./actions";
 
 const REFRESH_MS = 15_000;
-const TICK_MS = 5 * 60_000;
+const TICK_MS = 60_000;
 
 function ago(ms: number) {
   const s = Math.max(0, Math.round(ms / 1000));
@@ -60,10 +60,9 @@ export function LiveBar({ lastTickAt, enabled }: { lastTickAt: string | null; en
 
 const STEPS = [
   "Downloading latest prices from Bybit…",
-  "Working out the market type for each coin…",
-  "Asking the three strategies…",
+  "Checking the trend and today's breakout level…",
+  "Scoring the setup…",
   "Checking the safety rules…",
-  "Asking Opus 5.5 for a second opinion (only if there's a buy signal)…",
 ];
 
 export function RunNow() {
@@ -111,7 +110,7 @@ export function RunNow() {
           <div className="run-head">
             <strong>
               {report.status === "ran"
-                ? `Checked ${report.coins?.length ?? 0} coins just now`
+                ? `Checked ${report.coins?.length ?? 0} coin${report.coins?.length === 1 ? "" : "s"} just now`
                 : report.status === "busy"
                   ? "The bot is already checking - try again in a moment"
                   : report.status === "error"
