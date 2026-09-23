@@ -48,14 +48,15 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
   const breakout = (s.strategy ?? "breakout") === "breakout";
   const strat = breakout ? "breakout" : "classic";
   const since = new Date(Date.now() - 30 * 86400_000).toISOString();
-  const [open, closed, priceRes, snapsRes, eventsRes] = await Promise.all([
+  const [open, closed, priceRes, snapsRes, eventsRes, checksRes] = await Promise.all([
     openPositions(s.mode, strat),
     closedPositions(s.mode, 15, strat),
     breakout
       ? db().from("day_plans").select("price").eq("mode", s.mode).order("day", { ascending: false }).limit(1)
       : db().from("signals").select("*").in("symbol", s.symbols),
     db().from("equity_snapshots").select("created_at,equity").eq("mode", s.mode).gte("created_at", since).order("created_at").limit(5000),
-    db().from("events").select("*").order("created_at", { ascending: false }).limit(20),
+    db().from("events").select("*").neq("level", "check").order("id", { ascending: false }).limit(20),
+    db().from("events").select("id,created_at,message", { count: "exact" }).eq("level", "check").order("id", { ascending: false }).limit(60),
   ]);
 
   const signals = breakout ? [] : ((priceRes.data ?? []) as SignalRow[]).sort((a, b) => s.symbols.indexOf(a.symbol) - s.symbols.indexOf(b.symbol));
@@ -63,6 +64,8 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
   const priceOf = (sym: string) => (breakout ? btcPrice : signals.find((x) => x.symbol === sym)?.price);
   const snaps = (snapsRes.data ?? []).map((r) => ({ t: Date.parse(r.created_at), equity: r.equity as number }));
   const events = eventsRes.data ?? [];
+  const checks = checksRes.data ?? [];
+  const checkCount = checksRes.count ?? checks.length;
 
   const equity = snaps.length ? snaps[snaps.length - 1].equity : s.mode === "paper" ? s.paper_start_balance : null;
   const start = s.mode === "paper" ? s.paper_start_balance : (snaps[0]?.equity ?? null);
@@ -182,8 +185,23 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
                   <span className="what">{e.message}</span>
                 </li>
               ))}
-              {events.length === 0 && <li className="empty">Nothing yet.</li>}
+              {events.length === 0 && <li className="empty">No trades or warnings yet.</li>}
             </ul>
+            <details className="checks">
+              <summary>
+                Every market check <span className="muted small">({checkCount.toLocaleString()} saved, newest 5,000 kept)</span>
+              </summary>
+              <ul className="activity">
+                {checks.map((c) => (
+                  <li key={c.id} className="check">
+                    <span className="when">{when(c.created_at)}</span>
+                    <span className="what">{c.message}</span>
+                  </li>
+                ))}
+                {checks.length === 0 && <li className="empty">No checks recorded yet.</li>}
+              </ul>
+              {checkCount > checks.length && <p className="muted small">Showing the latest {checks.length}.</p>}
+            </details>
           </details>
         </div>
       </main>
