@@ -14,6 +14,7 @@ Teebot trades Bitcoin, Ethereum and Solana on **Bybit spot** by itself. It check
 3. **Trusts whatever has been working.** Each strategy is scored on how it did over the last ~8 days, after fees. Strategies that were losing get no say. If none are working, the bot waits.
 4. **Checks the mood.** When the free *Fear & Greed index* shows extreme greed, the bot needs a stronger signal before it buys.
 5. **Buys only when:** the market isn't falling or wild, the combined signal is strong enough, and at least 2 strategies agree.
+6. **Gets a second opinion (optional).** Claude Opus 5.5 reviews the setup and must be at least 65% confident before the bot buys. The dashboard tracks where the price went 24 hours after each AI decision, so you can see whether its calls are actually good.
 
 ## Safety rules (Cautious)
 
@@ -28,6 +29,7 @@ Teebot trades Bitcoin, Ethereum and Solana on **Bybit spot** by itself. It check
 | Safety shutdown | down 15% from its peak → sells everything, switches off, messages you |
 | Borrowed money (leverage) | **never** |
 | Withdrawals | **impossible**: the Bybit key only gets trade permission |
+| AI reviewer | can only veto, tighten the stop or shrink a trade; if it's unavailable the trade is skipped |
 
 ---
 
@@ -72,6 +74,17 @@ Takes about 30-45 minutes. You need free accounts on **Supabase**, **Vercel**, *
 2. In Vercel → your project → **Settings → Environment Variables**, add `TELEGRAM_BOT_TOKEN` = that token. Then go to **Deployments** → ⋯ on the latest → **Redeploy**.
 3. Open your new bot in Telegram and send it "hi".
 4. In your Teebot dashboard → **Settings → Connect Telegram**. You'll get a test message.
+
+### Step 4b: AI reviewer (optional, costs a little money)
+
+Before every buy, Teebot can ask **Claude Opus 5.5** for a second opinion. The AI sees the price charts, indicators, market mood and the bot's recent results. It can say no, tighten the stop-loss, or make the trade smaller. It can never make a trade riskier.
+
+1. Supabase → **SQL Editor** → **New query** → paste all of [`supabase/upgrade-ai.sql`](supabase/upgrade-ai.sql) → **Run**. (Skip this if you set up Supabase after this file was added. It's already in `schema.sql`.)
+2. Go to [console.anthropic.com](https://console.anthropic.com) → sign up → **Billing**: add a small amount of credit (e.g. $5) → **API Keys** → **Create Key**.
+3. In Vercel add `ANTHROPIC_API_KEY` = that key, then **Redeploy**.
+4. Dashboard: the pill at the top should say **AI reviewer on**.
+
+**Cost:** each review is about 3-8 US cents. The AI is only asked when the rules already want to buy, at most once per coin per hour, and never more than the daily limit (default 4, change it in Settings). In a quiet week that's a few cents. With a $20 account, keep the limit low: AI costs come out of your profit.
 
 ### Step 5: Practise for 2 to 4 weeks
 

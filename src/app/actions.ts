@@ -3,7 +3,7 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { SESSION_COOKIE, requireAuth, safeEqual, sessionToken } from "@/lib/auth";
-import { runTick } from "@/lib/bot";
+import { runTick, type TickReport } from "@/lib/bot";
 import { getHistory, getWallet } from "@/lib/bybit";
 import { db, getSettings, logEvent, updateSettings } from "@/lib/db";
 import { backtest, type BacktestResult } from "@/lib/engine/backtest";
@@ -43,10 +43,17 @@ export async function toggleBot() {
   back("/", s.enabled ? "Bot switched off" : "Bot switched on - it checks the market every 5 minutes");
 }
 
-export async function runNow() {
+export async function runNowAction(): Promise<TickReport> {
   await requireAuth();
-  const r = await runTick({ manual: true });
-  back("/", r.messages.length ? r.messages.join(" | ") : "Run finished - no trades needed");
+  return runTick({ manual: true });
+}
+
+export async function saveAiSettings(form: FormData) {
+  await requireAuth();
+  const limit = Math.round(Number(form.get("ai_daily_limit")));
+  if (!(limit >= 0 && limit <= 24)) back("/settings", "Daily AI reviews must be between 0 and 24");
+  await updateSettings({ ai_enabled: form.get("ai_enabled") === "on", ai_daily_limit: limit });
+  back("/settings", "AI settings saved");
 }
 
 export async function saveSettings(form: FormData) {

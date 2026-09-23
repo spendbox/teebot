@@ -88,3 +88,62 @@ label.check { display: inline-flex; gap: 6px; align-items: center; margin-right:
 .bar { height: 6px; background: var(--border); border-radius: 3px; position: relative; overflow: hidden; }
 .bar span { position: absolute; top: 0; bottom: 0; background: var(--accent); }
 svg.chart { width: 100%; height: 160px; display: block; }
+
+/* ---- Live dashboard ---- */
+:root { --ai: #7c3aed; --chip-bg: #eef1f5; }
+@media (prefers-color-scheme: dark) { :root { --ai: #a78bfa; --chip-bg: #222831; } }
+h2.section { font-size: 15px; margin: 24px 0 10px; color: var(--muted); font-weight: 600; }
+.small { font-size: 12px; }
+.row-between { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
+.hero { padding: 20px; }
+.hero-top { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+.hero-main { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-wrap: wrap; margin: 16px 0; }
+.hero .label { color: var(--muted); font-size: 13px; }
+.hero .big { font-size: 40px; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.1; }
+.hero .sub { display: flex; gap: 14px; flex-wrap: wrap; margin-top: 6px; font-variant-numeric: tabular-nums; }
+.hero-actions { display: flex; gap: 8px; align-items: flex-start; flex-wrap: wrap; }
+.hero-actions > div { max-width: 460px; }
+.livebar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.dot { width: 10px; height: 10px; border-radius: 50%; background: var(--muted); display: inline-block; }
+.dot.pulse { background: var(--good); animation: pulse 1.6s ease-out infinite; }
+@keyframes pulse {
+  0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--good) 60%, transparent); }
+  100% { box-shadow: 0 0 0 10px transparent; }
+}
+.pills { display: flex; gap: 6px; flex-wrap: wrap; }
+.pill { font-size: 12px; font-weight: 600; padding: 3px 10px; border-radius: 99px; background: var(--chip-bg); }
+.pill.live { background: var(--bad); color: #fff; }
+.pill.ai { background: var(--ai); color: #fff; }
+.spinner {
+  width: 14px; height: 14px; border-radius: 50%; display: inline-block; vertical-align: -2px;
+  border: 2px solid currentColor; border-right-color: transparent; animation: spin 0.8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+button:disabled { opacity: 0.75; cursor: default; }
+button.link { background: none; border: none; color: var(--accent); padding: 0; }
+.run-panel { margin-top: 10px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); }
+.run-head { display: flex; justify-content: space-between; gap: 8px; margin-bottom: 6px; }
+.run-row { display: flex; gap: 10px; padding: 4px 0; border-top: 1px solid var(--border); font-size: 14px; }
+.coin { font-weight: 700; min-width: 40px; }
+.coins { margin-bottom: 16px; display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); }
+.coin-card { margin-bottom: 0; display: flex; flex-direction: column; gap: 8px; }
+.coin-head { display: flex; justify-content: space-between; align-items: baseline; }
+.coin-head .coin { font-size: 18px; }
+.coin-head .price { font-variant-numeric: tabular-nums; font-weight: 600; }
+.chip { display: inline-block; font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 99px; background: var(--chip-bg); width: fit-content; }
+.chip.uptrend { background: color-mix(in srgb, var(--good) 18%, transparent); color: var(--good); }
+.chip.downtrend { background: color-mix(in srgb, var(--bad) 18%, transparent); color: var(--bad); }
+.chip.chaotic { background: color-mix(in srgb, var(--bad) 30%, transparent); }
+.chip.holding { background: var(--accent); color: #fff; }
+.meter { position: relative; height: 8px; border-radius: 4px; background: var(--chip-bg); }
+.meter .fill { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 4px; background: var(--accent); transition: width 0.6s; }
+.meter .mark { position: absolute; top: -4px; bottom: -4px; width: 2px; background: var(--text); }
+.reason { margin: 0; font-size: 14px; }
+.small-grid { margin: 8px 0 12px; }
+.reviews .review { border-top: 1px solid var(--border); padding: 10px 0; }
+.reviews .review p { margin: 6px 0 0; }
+.activity { list-style: none; padding: 0; margin: 0; }
+.activity li { display: flex; gap: 12px; padding: 6px 0; border-top: 1px solid var(--border); flex-wrap: wrap; }
+.activity li.error span:last-child { color: var(--bad); }
+.activity li.trade span:last-child { font-weight: 600; }
+@media (max-width: 600px) { .hero .big { font-size: 32px; } }

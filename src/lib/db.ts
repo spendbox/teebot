@@ -17,6 +17,10 @@ export interface Settings {
   lock_until: string | null;
   last_tick_at: string | null;
   last_error: string | null;
+  ai_enabled: boolean;
+  ai_daily_limit: number;
+  ai_calls_date: string | null;
+  ai_calls_today: number;
 }
 
 export interface Position {
