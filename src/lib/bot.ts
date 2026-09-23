@@ -1,3 +1,4 @@
+import { MIN_CONFIDENCE, aiGate, recordReviewOutcomes } from "./ai-gate";
 import { getClosedHourlyCandles, getLastPrice } from "./bybit";
 import { liveBroker } from "./broker/live";
 import { paperBroker } from "./broker/paper";
@@ -24,9 +25,19 @@ import type { Candle } from "./engine/types";
 import { getFearGreed } from "./sentiment";
 import { sendTelegram } from "./telegram";
 
+export interface CoinReport {
+  symbol: string;
+  price: number;
+  regime: string;
+  combined: number;
+  threshold: number;
+  outcome: string; // plain-English result of this check
+}
+
 export interface TickReport {
   status: "ran" | "disabled" | "busy" | "error";
   messages: string[];
+  coins?: CoinReport[];
 }
 
 const usd = (n: number) => `$${n.toFixed(2)}`;
@@ -111,6 +122,12 @@ export async function runTick(opts: { manual?: boolean } = {}): Promise<TickRepo
     }
 
     const recent = await closedPositions(settings.mode, 20);
+    const coins: CoinReport[] = [];
+    let btcContext: { regime: string; change24h: number } | null = null;
+    if (market.BTCUSDT && market.BTCUSDT.candles.length > WARMUP) {
+      const b = market.BTCUSDT.candles;
+      btcContext = { regime: analyze(b).regime[b.length - 1], change24h: b[b.length - 1].c / b[b.length - 25].c - 1 };
+    }
 
     for (const sym of settings.symbols) {
       const { candles, price } = market[sym];
@@ -161,23 +178,69 @@ export async function runTick(opts: { manual?: boolean } = {}): Promise<TickRepo
         weights: d.weights,
       });
 
+      const report: CoinReport = { symbol: sym, price, regime: d.regime, combined: d.combined, threshold: d.threshold, outcome: d.reason };
+      coins.push(report);
+      if (closedNow.has(sym)) report.outcome = "Just sold - waiting before trading this coin again";
+      else if (pos) report.outcome = `Holding. Stop-loss at ${pos.stop_price.toPrecision(6)}`;
+
       if (pos && d.action === "exit") {
         await closePosition(pos, await broker.sell(pos, price), d.reason);
+        report.outcome = `Sold: ${d.reason}`;
         continue;
       }
       if (pos || d.action !== "enter") continue;
 
       // 3. Entry checks.
-      if (entriesBlocked || closedNow.has(sym)) continue;
-      if (open.length >= profile.maxOpenPositions) continue;
-      const last = recent.find((p) => p.symbol === sym);
-      if (last?.closed_at && Date.now() - Date.parse(last.closed_at) < profile.cooldownHours * 3600_000) continue;
-
-      const stop = initialStop(price, atrNow, profile);
-      const spend = positionSize({ equity, cash, entry: price, stop, profile, minOrderUsd: await broker.minOrderUsd(sym) });
-      if (spend <= 0) {
-        messages.push(`${sym}: buy signal but balance too small for a safe trade`);
+      if (entriesBlocked || closedNow.has(sym)) {
+        if (entriesBlocked) report.outcome = "Buy signal, but trading is paused for today after losses";
         continue;
+      }
+      if (open.length >= profile.maxOpenPositions) {
+        report.outcome = `Buy signal, but already holding ${profile.maxOpenPositions} trades`;
+        continue;
+      }
+      const last = recent.find((p) => p.symbol === sym);
+      if (last?.closed_at && Date.now() - Date.parse(last.closed_at) < profile.cooldownHours * 3600_000) {
+        report.outcome = "Buy signal, but cooling down after the last trade";
+        continue;
+      }
+
+      let stop = initialStop(price, atrNow, profile);
+      const minOrderUsd = await broker.minOrderUsd(sym);
+      let spend = positionSize({ equity, cash, entry: price, stop, profile, minOrderUsd });
+      if (spend <= 0) {
+        report.outcome = "Buy signal, but the balance is too small for a safe trade";
+        continue;
+      }
+
+      // 4. Second opinion from Opus 5.5 (it can only veto, tighten the stop or shrink the size).
+      const gate = await aiGate(settings, {
+        symbol: sym,
+        analysis: a,
+        decision: d,
+        fng,
+        btc: sym === "BTCUSDT" ? null : btcContext,
+        recentTrades: recent.slice(0, 8),
+        proposal: { entry: price, stop, spendUsd: spend, equityUsd: equity },
+        candleTime: candles[i].t,
+      });
+      let aiNote = "";
+      if (gate.status === "rejected") {
+        report.outcome = `AI said no (${gate.verdict.confidence.toFixed(0)}% confident it's worth it): ${gate.verdict.reasoning}`;
+        if (gate.fresh) {
+          await alert("trade", `AI skipped a ${sym} buy (needs ${MIN_CONFIDENCE}%+, got ${gate.verdict.confidence.toFixed(0)}%). ${gate.verdict.reasoning}`);
+        }
+        continue;
+      }
+      if (gate.status === "unavailable") {
+        report.outcome = `Buy signal, but skipped because the AI review was unavailable (${gate.reason})`;
+        if (gate.fresh) await alert("warn", `AI review unavailable for ${sym}, trade skipped to be safe: ${gate.reason}`);
+        continue;
+      }
+      if (gate.status === "approved") {
+        stop = gate.verdict.stop_price;
+        spend = Math.min(spend, Math.max(minOrderUsd, spend * gate.verdict.size_multiplier));
+        aiNote = ` AI approved (${gate.verdict.confidence.toFixed(0)}%): ${gate.verdict.reasoning}`;
       }
 
       const fill = await broker.buy(sym, spend, price);
@@ -202,11 +265,14 @@ export async function runTick(opts: { manual?: boolean } = {}): Promise<TickRepo
       });
       cash -= fill.cost;
       open = [...open, { symbol: sym } as Position];
+      report.outcome = `BOUGHT ${usd(fill.cost)} at ${fill.price}`;
       await alert(
         "trade",
-        `BOUGHT ${sym}: ${usd(fill.cost)} at ${fill.price}. Stop-loss ${fillStop.toFixed(4)} (max loss ~${usd(fill.cost * (1 - fillStop / fill.price))}). Why: ${d.reason}`,
+        `BOUGHT ${sym}: ${usd(fill.cost)} at ${fill.price}. Stop-loss ${fillStop.toFixed(4)} (max loss ~${usd(fill.cost * (1 - fillStop / fill.price))}). Why: ${d.reason}.${aiNote}`,
       );
     }
+
+    await recordReviewOutcomes(prices);
 
     // Record the balance after this run.
     open = await openPositions(settings.mode);
@@ -219,7 +285,7 @@ export async function runTick(opts: { manual?: boolean } = {}): Promise<TickRepo
       last_tick_at: new Date().toISOString(),
       last_error: null,
     });
-    return { status: "ran", messages };
+    return { status: "ran", messages, coins };
   } catch (e) {
     const msg = (e as Error).message;
     // Only alert when the error is new, so a lasting outage doesn't spam you.

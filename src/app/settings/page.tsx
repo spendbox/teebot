@@ -1,6 +1,8 @@
 import { getSettings } from "@/lib/db";
 import { PROFILES } from "@/lib/engine/profiles";
-import { connectTelegram, resetPaper, resetPeak, resetSafety, saveSettings, setMode, testBybit } from "../actions";
+import { aiAvailable } from "@/lib/ai";
+import { MIN_CONFIDENCE } from "@/lib/ai-gate";
+import { connectTelegram, resetPaper, resetPeak, resetSafety, saveAiSettings, saveSettings, setMode, testBybit } from "../actions";
 import { Message, Nav } from "../ui";
 
 export const dynamic = "force-dynamic";
@@ -45,6 +47,33 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
           <p className="muted">
             Current rules: risks at most {pct(p.riskPerTrade)} of your balance per trade, up to {p.maxOpenPositions} trades at once, stops
             for the day after a {pct(p.dailyLossLimit)} loss, and shuts down completely after a {pct(p.maxDrawdown)} fall from the peak.
+          </p>
+        </div>
+
+        <div className="card">
+          <h2>AI reviewer (Claude Opus 5.5)</h2>
+          <p>
+            API key: <strong>{aiAvailable() ? "added" : "missing - add ANTHROPIC_API_KEY in Vercel"}</strong>
+          </p>
+          <form action={saveAiSettings}>
+            <p>
+              <label className="check">
+                <input type="checkbox" name="ai_enabled" defaultChecked={s.ai_enabled} />
+                Ask the AI before every buy
+              </label>
+            </p>
+            <p>
+              Maximum AI reviews per day:{" "}
+              <input name="ai_daily_limit" type="number" min="0" max="24" defaultValue={s.ai_daily_limit} style={{ width: 80 }} />
+            </p>
+            <button className="primary" type="submit">
+              Save
+            </button>
+          </form>
+          <p className="muted">
+            The AI is only asked when the rules already want to buy, at most once per coin per hour. Each review costs roughly 3-8 US cents.
+            It needs {MIN_CONFIDENCE}%+ confidence to allow a trade. If the daily limit is reached or the AI is unavailable, the bot skips the
+            trade to stay safe.
           </p>
         </div>
 
