@@ -1,35 +1,55 @@
-# Teebot: a cautious crypto trading bot
+# Teebot: Bitcoin breakout day-trader
 
-Teebot trades Bitcoin, Ethereum and Solana on **Bybit spot** by itself. It checks the market every 5 minutes, only buys when several independent strategies agree, and puts a stop-loss on every trade.
+Teebot trades **Bitcoin futures on Bybit** by itself, using the **confidence breakout** strategy. It was chosen after testing many ideas on real Bitcoin prices from 2017 to 2026.
 
-> **Please read:** no bot can guarantee profit. Teebot is built to **protect your money first**. It stays in cash (USDT) when the market is falling or too wild. It is normal for it to go days without trading. Start in practice mode.
+> **Please read:** no bot can guarantee profit. This one loses on some days and in some years. Start in practice mode, and only trade money you can afford to lose.
 
-## How it decides
+## How it trades (in plain words)
 
-1. **Reads the market.** Every 5 minutes it downloads hourly prices from Bybit and labels each coin: *trending up*, *trending down*, *moving sideways* or *too wild*.
-2. **Asks three strategies:**
-   - **Trend follower:** rides steady upward moves.
-   - **Range trader:** buys sharp dips when the price is moving sideways.
-   - **Breakout catcher:** buys when the price breaks above its recent high on strong volume.
-3. **Trusts whatever has been working.** Each strategy is scored on how it did over the last ~8 days, after fees. Strategies that were losing get no say. If none are working, the bot waits.
-4. **Checks the mood.** When the free *Fear & Greed index* shows extreme greed, the bot needs a stronger signal before it buys.
-5. **Buys only when:** the market isn't falling or wild, the combined signal is strong enough, and at least 2 strategies agree.
-6. **Gets a second opinion (optional).** Claude Opus 5.5 reviews the setup and must be at least 65% confident before the bot buys. The dashboard tracks where the price went 24 hours after each AI decision, so you can see whether its calls are actually good.
+Every minute, the bot:
 
-## Safety rules (Cautious)
+1. **Checks for an uptrend.** If Bitcoin closed below its 20-day average yesterday, it does nothing today.
+2. **Sets today's breakout level:** today's opening price + 70% of yesterday's high-to-low range.
+3. **Buys the moment Bitcoin breaks above that level,** if the setup scores well enough.
+4. **Scores the setup out of 7:**
+   - a strong uptrend (8.6%+ above the 20-day average)
+   - above the 100-day average
+   - the 50-day average is rising
+   - yesterday was an up day
+   - it's a weekday
+   - yesterday was calmer than usual
+   - the breakout comes before 12:00 UTC
+5. **Sets leverage by score** (Balanced): **5 → 2×, 6 → 4×, 7 → 5×. It skips 4 or less.**
+6. **Checks volume:** when the breakout hour ends, if trading volume was under 1.5× a normal hour, it sells straight away.
+7. **Protects the trade:** a **5% emergency stop** sits on Bybit itself, and it **sells before midnight UTC**. It never holds overnight.
+
+## Tested results (Bitcoin, fees + slippage + funding included)
+
+The rules were learned on 2017–2020 and then tested on **2021–2026, which they had never seen**:
+
+| | 2021–2026 (unseen) |
+|---|---|
+| Average per year | about **+38%** |
+| Trades per year | about **21** |
+| Trades won | about 48% (the wins are bigger than the losses) |
+| Longest losing streak | 5 |
+| Worst dip from a high | −37% |
+| Profitable years | 5 of 6 (2025: −9%) |
+
+Try it yourself on the **Backtest** page, which uses Bybit's own prices.
+
+## Safety rules
 
 | Rule | Setting |
 |---|---|
-| Most it can lose on one trade | about 1% of your balance |
-| Most money in one coin | 35% |
-| Trades open at once | 2 |
-| Stop-loss | on every trade, placed **on Bybit itself**, so it works even if the bot is offline |
-| Locking in profit | stop moves up to break-even, then follows the price up |
-| Bad day | down 3% → no new trades until tomorrow |
-| Safety shutdown | down 15% from its peak → sells everything, switches off, messages you |
-| Borrowed money (leverage) | **never** |
-| Withdrawals | **impossible**: the Bybit key only gets trade permission |
-| AI reviewer | can only veto, tighten the stop or shrink a trade; if it's unavailable the trade is skipped |
+| Emergency stop | −5% on every trade, placed on Bybit |
+| Overnight holding | **never**: sells by 23:57 UTC |
+| Leverage | 2× to 5×, only for high-scoring setups (Safer profile: at most 3×) |
+| Trades per day | at most 1 |
+| Safety shutdown | balance down 50% from its peak → closes everything and stops |
+| Withdrawals | **impossible**: the API key only gets trading permission |
+
+**Account size:** Bybit's smallest Bitcoin futures order is 0.001 BTC (about $100 with Bitcoin at $100k). **Use at least $100**, or 2× trades may be too small to place. With small accounts, orders round *down* to 0.001 BTC steps, so actual leverage can be a little lower than planned.
 
 ---
 
@@ -60,7 +80,7 @@ Takes about 30-45 minutes. You need free accounts on **Supabase**, **Vercel**, *
 
 3. Press **Deploy**. When it finishes you get an address like `https://teebot-abc.vercel.app`. Open it and log in with your dashboard password.
 
-### Step 3: Make it run every 5 minutes
+### Step 3: Make it run every minute
 
 1. Back in Supabase → **SQL Editor** → **New query**.
 2. Copy [`supabase/cron.sql`](supabase/cron.sql). Before running, replace:
@@ -75,7 +95,13 @@ Takes about 30-45 minutes. You need free accounts on **Supabase**, **Vercel**, *
 3. Open your new bot in Telegram and send it "hi".
 4. In your Teebot dashboard → **Settings → Connect Telegram**. You'll get a test message.
 
-### Step 4b: AI reviewer (optional, costs a little money)
+### Step 4a: Breakout upgrade (only if you set Teebot up before the breakout strategy)
+
+1. Supabase → **SQL Editor** → **New query** → paste all of [`supabase/upgrade-breakout.sql`](supabase/upgrade-breakout.sql) → **Run**.
+2. Run [`supabase/cron.sql`](supabase/cron.sql) again (with your address and secret filled in). It now runs every minute.
+3. Dashboard → **Settings → Practice account** → reset to **$100**.
+
+### Step 4b: AI reviewer (Classic strategy only, optional)
 
 Before every buy, Teebot can ask **Claude Opus 5.5** for a second opinion. The AI sees the price charts, indicators, market mood and the bot's recent results. It can say no, tighten the stop-loss, or make the trade smaller. It can never make a trade riskier.
 
@@ -86,9 +112,9 @@ Before every buy, Teebot can ask **Claude Opus 5.5** for a second opinion. The A
 
 **Cost:** each review is about 3-8 US cents. The AI is only asked when the rules already want to buy, at most once per coin per hour, and never more than the daily limit (default 4, change it in Settings). In a quiet week that's a few cents. With a $20 account, keep the limit low: AI costs come out of your profit.
 
-### Step 5: Practise for 2 to 4 weeks
+### Step 5: Practise for 1 to 3 months
 
-1. Dashboard → **Switch on**. It starts with **$20 of practice money** and real prices.
+1. Dashboard → **Switch on**. It trades **practice money** ($100 recommended; set it in Settings) on live Bybit prices. It only trades about twice a month, so give it time.
 2. Try the **Backtest** page to see how the rules would have done over the past months.
 3. Messages marked `[PRACTICE]` are practice trades.
 
@@ -99,12 +125,14 @@ Before every buy, Teebot can ask **Claude Opus 5.5** for a second opinion. The A
 - **Alternative:** buy USDT with naira on a Nigerian exchange (e.g. Quidax or Busha), then withdraw it to your Bybit USDT deposit address. Choose a cheap network such as TRC20 or BEP20, and use **the same network on both sides**.
 - Make sure the USDT is in your **Unified Trading** account (Bybit → Assets → Transfer).
 
+**Switch on futures trading:** in the Bybit app, open **Derivatives → USDT Perpetual**. If Bybit asks you to pass a short quiz or accept terms, complete them. Keep your USDT in the **Unified Trading** account.
+
 **Create a trade-only API key:**
 1. Bybit → profile → **API** → **Create New Key** → **System-generated**.
-2. Choose **Read-Write**, and tick only **Unified Trading → Spot → Trade**. **Do NOT tick Withdraw or Transfer.**
+2. Choose **Read-Write**, and tick only **Unified Trading → Contract → Orders and Positions** (plus **Spot → Trade** if you might use the Classic strategy). **Do NOT tick Withdraw or Transfer.**
 3. IP restriction: choose **No IP restriction**, because Vercel's address changes. Bybit makes these keys **expire after 3 months**, so create a new one when that happens (the bot will message you with an error).
 4. In Vercel add `BYBIT_API_KEY` and `BYBIT_API_SECRET`, then **Redeploy**.
-5. Dashboard → **Settings → Test Bybit connection**. It should show your balance.
+5. Dashboard → **Settings → Test Bybit connection**. It should show your balance and "Futures access: OK".
 6. **Settings → Money mode** → type `LIVE` → **Switch to real money** → Dashboard → **Switch on**.
 
 **After you deposit or withdraw,** press *"I deposited or withdrew - restart balance tracking"* in Settings. Otherwise a withdrawal looks like a loss.

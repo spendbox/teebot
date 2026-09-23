@@ -2,7 +2,7 @@ import { getSettings } from "@/lib/db";
 import { PROFILES } from "@/lib/engine/profiles";
 import { aiAvailable } from "@/lib/ai";
 import { MIN_CONFIDENCE } from "@/lib/ai-gate";
-import { connectTelegram, resetPaper, resetPeak, resetSafety, saveAiSettings, saveSettings, setMode, testBybit } from "../actions";
+import { connectTelegram, resetPaper, resetPeak, resetSafety, saveAiSettings, saveSettings, saveStrategy, setMode, testBybit } from "../actions";
 import { Message, Nav } from "../ui";
 
 export const dynamic = "force-dynamic";
@@ -22,7 +22,39 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
         <Message msg={msg} />
 
         <div className="card">
-          <h2>Trading</h2>
+          <h2>Strategy</h2>
+          <form action={saveStrategy}>
+            <p>
+              <label className="check">
+                <input type="radio" name="strategy" value="breakout" defaultChecked={(s.strategy ?? "breakout") === "breakout"} />
+                <strong>Breakout day-trader</strong>&nbsp;(recommended): Bitcoin futures, 2x–5x leverage by confidence score, closed by the end of every day
+              </label>
+            </p>
+            <p>
+              <label className="check">
+                <input type="radio" name="strategy" value="classic" defaultChecked={s.strategy === "classic"} />
+                Classic: the original spot strategy (lost money in long-term tests)
+              </label>
+            </p>
+            <p>
+              Breakout leverage:{" "}
+              <select name="breakout_profile" defaultValue={s.breakout_profile ?? "balanced"}>
+                <option value="balanced">Balanced: score 5 → 2x, 6 → 4x, 7 → 5x</option>
+                <option value="safer">Safer: score 5 → 2x, 6–7 → 3x</option>
+              </select>
+            </p>
+            <button className="primary" type="submit">
+              Save
+            </button>
+          </form>
+          <p className="muted">
+            Breakout tests on 2021–2026 Bitcoin prices (never used to design the rules): Balanced about +38%/year, about 21 trades a year,
+            longest losing streak 5, worst dip −37%. Safer: smaller dips, lower profit. Past results don&apos;t guarantee the future.
+          </p>
+        </div>
+
+        <div className="card">
+          <h2>Classic strategy settings</h2>
           <form action={saveSettings}>
             <p>Coins to trade:</p>
             <p>
@@ -51,7 +83,8 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
         </div>
 
         <div className="card">
-          <h2>AI reviewer (Claude Opus 5.5)</h2>
+          <h2>AI reviewer (Claude Opus 5.5) - Classic strategy only</h2>
+          <p className="muted">The Breakout day-trader doesn&apos;t use the AI. Its rules decide everything, which is what was tested.</p>
           <p>
             API key: <strong>{aiAvailable() ? "added" : "missing - add ANTHROPIC_API_KEY in Vercel"}</strong>
           </p>

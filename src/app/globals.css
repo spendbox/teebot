@@ -147,3 +147,4 @@ button.link { background: none; border: none; color: var(--accent); padding: 0; 
 .activity li.error span:last-child { color: var(--bad); }
 .activity li.trade span:last-child { font-weight: 600; }
 @media (max-width: 600px) { .hero .big { font-size: 32px; } }
+.clues { list-style: none; padding: 0; margin: 12px 0 0; display: grid; gap: 4px; font-size: 14px; }

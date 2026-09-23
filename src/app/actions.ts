@@ -4,7 +4,8 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { SESSION_COOKIE, requireAuth, safeEqual, sessionToken } from "@/lib/auth";
 import { runTick, type TickReport } from "@/lib/bot";
-import { getHistory, getWallet } from "@/lib/bybit";
+import { getFuturesHistory, getFuturesPosition, getHistory, getWallet } from "@/lib/bybit";
+import { HISTORY_DAYS, backtestBreakout, type BreakoutBacktest } from "@/lib/breakout/strategy";
 import { db, getSettings, logEvent, updateSettings } from "@/lib/db";
 import { backtest, type BacktestResult } from "@/lib/engine/backtest";
 import { getProfile } from "@/lib/engine/profiles";
@@ -46,6 +47,20 @@ export async function toggleBot() {
 export async function runNowAction(): Promise<TickReport> {
   await requireAuth();
   return runTick({ manual: true });
+}
+
+export async function saveStrategy(form: FormData) {
+  await requireAuth();
+  const strategy = form.get("strategy") === "classic" ? "classic" : "breakout";
+  const breakout_profile = form.get("breakout_profile") === "safer" ? "safer" : "balanced";
+  const s = await getSettings();
+  const open = await db().from("positions").select("id").eq("mode", s.mode).eq("status", "open");
+  if (strategy !== (s.strategy ?? "breakout") && (open.data?.length ?? 0) > 0) {
+    back("/settings", "Close the open trade first (or wait for it to finish) before switching strategy");
+  }
+  await updateSettings({ strategy, breakout_profile });
+  await logEvent("info", `Strategy set to ${strategy === "breakout" ? `Breakout day-trader (${breakout_profile})` : "Classic"}`);
+  back("/settings", "Strategy saved");
 }
 
 export async function saveAiSettings(form: FormData) {
@@ -132,7 +147,13 @@ export async function testBybit() {
   let message = "";
   try {
     const w = await getWallet();
-    message = `Bybit connected. Account value $${w.totalEquity.toFixed(2)}, USDT available ${(w.coins.USDT ?? 0).toFixed(2)}`;
+    message = `Bybit connected. Account value $${w.totalEquity.toFixed(2)}, USDT available ${(w.coins.USDT ?? 0).toFixed(2)}.`;
+    try {
+      await getFuturesPosition("BTCUSDT");
+      message += " Futures (derivatives) access: OK.";
+    } catch (e) {
+      message += ` Futures access FAILED: ${(e as Error).message}. Check the API key has Contract/Derivatives permissions.`;
+    }
   } catch (e) {
     message = `Bybit test failed: ${(e as Error).message}`;
   }
@@ -151,6 +172,23 @@ export async function runBacktest(_prev: BacktestState, form: FormData): Promise
     const [candles, fngByDay] = await Promise.all([getHistory(symbol, days + 11), getFearGreedHistory()]);
     const result = backtest(candles, getProfile(s.risk_profile), { startBalance: balance, fngByDay });
     return { symbol, days, result };
+  } catch (e) {
+    return { error: (e as Error).message };
+  }
+}
+
+export type BreakoutBacktestState = { error?: string; days?: number; result?: Omit<BreakoutBacktest, "trades"> & { trades: BreakoutBacktest["trades"] } } | null;
+
+export async function runBreakoutBacktest(_prev: BreakoutBacktestState, form: FormData): Promise<BreakoutBacktestState> {
+  await requireAuth();
+  const days = Math.min(1800, Math.max(90, Number(form.get("days")) || 730));
+  const balance = Math.max(10, Number(form.get("balance")) || 50);
+  const profile = form.get("profile") === "safer" ? "safer" : "balanced";
+  try {
+    const hourly = await getFuturesHistory("BTCUSDT", days + HISTORY_DAYS + 2);
+    const from = Date.now() - days * 86_400_000;
+    const result = backtestBreakout(hourly, { profile, startBalance: balance, minNotional: 90, from });
+    return { days, result: { ...result, trades: result.trades.slice(-30).reverse() } };
   } catch (e) {
     return { error: (e as Error).message };
   }

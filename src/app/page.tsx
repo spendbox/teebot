@@ -2,6 +2,7 @@ import { aiAvailable } from "@/lib/ai";
 import { MIN_CONFIDENCE } from "@/lib/ai-gate";
 import { closedPositions, db, getSettings, openPositions } from "@/lib/db";
 import { toggleBot } from "./actions";
+import { BreakoutPanel } from "./breakout-panel";
 import { LiveBar, RunNow, SubmitButton } from "./live";
 import { EquityChart, Message, Nav, REGIME_TEXT, money, price } from "./ui";
 
@@ -45,19 +46,22 @@ const pctText = (x: number) => `${x >= 0 ? "+" : ""}${(x * 100).toFixed(1)}%`;
 export default async function Dashboard({ searchParams }: { searchParams: Promise<{ msg?: string }> }) {
   const { msg } = await searchParams;
   const s = await getSettings();
+  const breakout = (s.strategy ?? "breakout") === "breakout";
+  const strat = breakout ? "breakout" : "classic";
   const since = new Date(Date.now() - 14 * 86400_000).toISOString();
   const monthStart = new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), 1)).toISOString();
   const [open, closed, signalsRes, snapsRes, eventsRes, firstSnapRes, reviewsRes, monthCostRes] = await Promise.all([
-    openPositions(s.mode),
-    closedPositions(s.mode, 20),
-    db().from("signals").select("*").in("symbol", s.symbols),
+    openPositions(s.mode, strat),
+    closedPositions(s.mode, 20, strat),
+    breakout ? db().from("day_plans").select("price").eq("mode", s.mode).order("day", { ascending: false }).limit(1) : db().from("signals").select("*").in("symbol", s.symbols),
     db().from("equity_snapshots").select("created_at,equity").eq("mode", s.mode).gte("created_at", since).order("created_at").limit(5000),
     db().from("events").select("*").order("created_at", { ascending: false }).limit(15),
     db().from("equity_snapshots").select("equity").eq("mode", s.mode).order("created_at").limit(1),
     db().from("ai_reviews").select("*").order("created_at", { ascending: false }).limit(50),
     db().from("ai_reviews").select("cost_usd").gte("created_at", monthStart),
   ]);
-  const signals = ((signalsRes.data ?? []) as SignalRow[]).sort((a, b) => s.symbols.indexOf(a.symbol) - s.symbols.indexOf(b.symbol));
+  const breakoutPrice = breakout ? ((signalsRes.data?.[0] as { price?: number } | undefined)?.price ?? null) : null;
+  const signals = (breakout ? [] : ((signalsRes.data ?? []) as SignalRow[])).sort((a, b) => s.symbols.indexOf(a.symbol) - s.symbols.indexOf(b.symbol));
   const snaps = (snapsRes.data ?? []).map((r) => ({ t: Date.parse(r.created_at), equity: r.equity as number }));
   const events = eventsRes.data ?? [];
   const reviews = (reviewsRes.data ?? []) as ReviewRow[];
@@ -68,7 +72,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
   const totalPnl = equity != null && startEquity != null ? equity - startEquity : null;
   const todayPnl = equity != null && s.day_start_equity != null ? equity - s.day_start_equity : null;
   const wins = closed.filter((p) => (p.pnl ?? 0) > 0).length;
-  const priceOf = (sym: string) => signals.find((x) => x.symbol === sym)?.price;
+  const priceOf = (sym: string) => (breakout ? breakoutPrice ?? undefined : signals.find((x) => x.symbol === sym)?.price);
   const cls = (n: number | null) => (n == null ? "" : n >= 0 ? "good" : "bad");
 
   // Was the AI right? Compare the price 24h after each verdict.
@@ -95,8 +99,14 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
             <LiveBar lastTickAt={s.last_tick_at} enabled={s.enabled} />
             <div className="pills">
               <span className={`pill ${s.mode === "live" ? "live" : ""}`}>{s.mode === "live" ? "REAL MONEY" : "PRACTICE"}</span>
-              <span className="pill">{s.risk_profile === "balanced" ? "Balanced" : "Cautious"}</span>
-              <span className={`pill ${aiReady ? "ai" : ""}`}>{aiReady ? "AI reviewer on" : "AI reviewer off"}</span>
+              {breakout ? (
+                <span className="pill">Breakout · {s.breakout_profile === "safer" ? "Safer 2-3x" : "Balanced 2-5x"}</span>
+              ) : (
+                <>
+                  <span className="pill">{s.risk_profile === "balanced" ? "Balanced" : "Cautious"}</span>
+                  <span className={`pill ${aiReady ? "ai" : ""}`}>{aiReady ? "AI reviewer on" : "AI reviewer off"}</span>
+                </>
+              )}
             </div>
           </div>
           <div className="hero-main">
@@ -121,8 +131,10 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
           <EquityChart points={snaps} />
         </section>
 
-        <h2 className="section">What the bot sees</h2>
-        <div className="coins">
+        {breakout && <BreakoutPanel settings={s} equity={equity} />}
+
+        {!breakout && <h2 className="section">What the bot sees</h2>}
+        {!breakout && <div className="coins">
           {signals.map((x) => {
             const pos = open.find((p) => p.symbol === x.symbol);
             const fill = Math.max(0, Math.min(1, x.combined));
@@ -150,9 +162,9 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
             );
           })}
           {signals.length === 0 && <div className="card muted">No data yet - press &quot;Check market now&quot;.</div>}
-        </div>
+        </div>}
 
-        <section className="card">
+        {!breakout && <section className="card">
           <div className="row-between">
             <h2>AI reviewer (Opus 5.5)</h2>
             <span className="muted small">This month: ${aiMonthCost.toFixed(2)} · today {s.ai_calls_date === new Date().toISOString().slice(0, 10) ? s.ai_calls_today : 0}/{s.ai_daily_limit} reviews</span>
@@ -202,7 +214,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
               <p className="muted">No reviews yet. In a cautious setup, buy signals are rare - this is expected.</p>
             )}
           </div>
-        </section>
+        </section>}
 
         <section className="card">
           <h2>Open trades</h2>
@@ -211,7 +223,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
               <thead>
                 <tr>
                   <th>Coin</th>
-                  <th>Invested</th>
+                  <th>Size</th>
                   <th>Bought at</th>
                   <th>Now</th>
                   <th>Stop-loss</th>
@@ -224,7 +236,10 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
                   const pnl = now != null ? p.qty * now - p.cost : null;
                   return (
                     <tr key={p.id}>
-                      <td>{p.symbol.replace("USDT", "")}</td>
+                      <td>
+                        {p.symbol.replace("USDT", "")}
+                        {p.leverage ? ` ${p.leverage}x` : ""}
+                      </td>
                       <td>{money(p.cost)}</td>
                       <td>{price(p.entry_price)}</td>
                       <td>{price(now)}</td>
