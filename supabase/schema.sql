@@ -1,0 +1,80 @@
+-- Teebot database. Paste this whole file into Supabase > SQL Editor and press Run.
+-- Safe to run more than once.
+
+create table if not exists settings (
+  id int primary key default 1 check (id = 1),
+  enabled boolean not null default false,
+  mode text not null default 'paper' check (mode in ('paper', 'live')),
+  risk_profile text not null default 'cautious',
+  symbols text[] not null default '{BTCUSDT,ETHUSDT,SOLUSDT}',
+  paper_start_balance double precision not null default 20,
+  peak_equity double precision,
+  day_start_equity double precision,
+  day_start_date date,
+  daily_halt_date date,
+  kill_switch boolean not null default false,
+  kill_reason text,
+  telegram_chat_id text,
+  lock_until timestamptz,
+  last_tick_at timestamptz,
+  last_error text,
+  updated_at timestamptz not null default now()
+);
+insert into settings (id) values (1) on conflict (id) do nothing;
+
+create table if not exists positions (
+  id bigserial primary key,
+  mode text not null,
+  symbol text not null,
+  status text not null default 'open' check (status in ('open', 'closed')),
+  qty double precision not null,
+  entry_price double precision not null,
+  cost double precision not null,
+  stop_price double precision not null,
+  highest_price double precision not null,
+  stop_order_id text,
+  opened_at timestamptz not null default now(),
+  closed_at timestamptz,
+  exit_price double precision,
+  proceeds double precision,
+  pnl double precision,
+  exit_reason text,
+  signal jsonb
+);
+create index if not exists positions_open_idx on positions (mode, status);
+
+create table if not exists signals (
+  symbol text primary key,
+  updated_at timestamptz not null default now(),
+  regime text,
+  action text,
+  reason text,
+  price double precision,
+  combined double precision,
+  threshold double precision,
+  confirmations int,
+  scores jsonb,
+  weights jsonb
+);
+
+create table if not exists events (
+  id bigserial primary key,
+  created_at timestamptz not null default now(),
+  level text not null,
+  message text not null
+);
+
+create table if not exists equity_snapshots (
+  id bigserial primary key,
+  created_at timestamptz not null default now(),
+  mode text not null,
+  equity double precision not null
+);
+create index if not exists equity_snapshots_idx on equity_snapshots (mode, created_at);
+
+-- Lock every table: only the server (which holds the secret key) can read or write.
+alter table settings enable row level security;
+alter table positions enable row level security;
+alter table signals enable row level security;
+alter table events enable row level security;
+alter table equity_snapshots enable row level security;
