@@ -382,3 +382,11 @@ details.checks > summary { cursor: pointer; font-weight: 600; font-size: 14px; }
 @media (prefers-reduced-motion: reduce) {
   .orb, .live-dot, .landing-hero, .ticker, .login-card, .features li { animation: none; }
 }
+
+/* ---- Early warning ---- */
+.danger-notice { background: var(--bad-soft); border-color: color-mix(in srgb, var(--bad) 35%, transparent); }
+.gauge { height: 10px; border-radius: 99px; background: var(--card-2); border: 1px solid var(--border); overflow: hidden; margin-top: 12px; }
+.gauge span { display: block; height: 100%; border-radius: 99px; transition: width 0.4s ease; }
+.gauge .good { background: var(--good); }
+.gauge .warn { background: #f59e0b; }
+.gauge .bad { background: var(--bad); }

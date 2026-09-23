@@ -23,6 +23,11 @@ export interface Settings {
   ai_calls_today: number;
   strategy: "breakout" | "classic";
   breakout_profile: "balanced" | "safer";
+  run_start_at: string | null;
+  run_start_equity: number | null;
+  warning_action: "pause" | "alert";
+  warning_at: string | null;
+  warning_reason: string | null;
 }
 
 export interface Position {
