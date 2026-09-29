@@ -182,3 +182,32 @@ Trading them (fees included; holding $100 -> $256 in 2017-20, $152 in 2021-23):
 
 Interactive chart of these signs vs the perfect points: published as the "Long and Short Signs"
 artifact.
+
+## "Critic" review (checklist from the @x_insider4 article) (`critic.py`, `runbreak.ts`)
+
+Everything re-run with the article's engine: position = signal shifted one bar (act on the next
+hour), log returns, costs on every change of position, daily returns 2018-2023. Deflated Sharpe
+(Bailey & Lopez de Prado) computed per day with the expected best Sharpe of N pure-noise trials
+(the article's snippet mixes a yearly Sharpe with a daily count, which is too lenient).
+
+| Strategy | $100 became | Worst dip | Sharpe/yr | Trials assumed | Deflated | Half-years positive | Worst half-year |
+|---|---|---|---|---|---|---|---|
+| Holding Bitcoin | $322 | 81% | 0.27 | 1 | 0.75 | 8/13 | -57% |
+| Live breakout bot (2-5x) | $1,700 | 42% | 1.08 | 60 | 0.63 | 10/13 | -27% |
+| Trend bot 10% (spot) | $1,173 | 57% | 0.76 | 100 | 0.25 | 8/13 | -26% |
+| Trend bot 10% (perps, with funding) | $785 | 57% | 0.64 | 100 | 0.17 | 8/13 | -29% |
+| Trend bot 12% (spot) | $455 | 67% | 0.48 | 100 | 0.09 | 7/13 | -41% |
+| 5/5 long signs + 12% trail | $455 | 84% | 0.40 | 150 | 0.05 | 8/13 | -76% |
+
+A strategy passes at 0.95. Nothing passes once the number of ideas tried is counted.
+
+Live breakout bot on Binance data (independent of the Bitstamp data it was built on):
+2018-20 $100 -> $532 (worst dip 42%); 2021-23 $100 -> $320 vs holding $153 (worst dip 27%).
+Its deflated Sharpe: 0.998 if it were the only idea tried, 0.94 at 5 ideas, 0.88 at 10, 0.63 at
+60. On 2021-23 alone (one test): 0.98. Promising and consistent, but not proven.
+
+Checklist on the live bot's backtest (`src/lib/breakout/strategy.ts`): look-ahead absent (plans use
+completed days only); no repainting indicators; fees + slippage + funding applied; fills at the
+trigger price (fine for a stop order; the live bot checks every minute so real fills can be a bit
+worse); a 5% stop hit inside the entry hour is not checked (small optimistic bias); ~10 parameters
+learned on 2017-20; 2021-23 test has bull and bear; UTC days, incomplete days dropped.
