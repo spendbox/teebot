@@ -2,6 +2,7 @@ import { runEthBacktest } from "../actions";
 import { Nav } from "../ui";
 import { BreakoutBacktestForm } from "./breakout-form";
 import { BacktestForm } from "./form";
+import { WaveBacktestForm } from "./wave-form";
 
 export const maxDuration = 120;
 
@@ -10,6 +11,15 @@ export default function BacktestPage() {
     <>
       <Nav active="backtest" />
       <main>
+        <div className="card">
+          <h2>Wave test: buy every low, sell every high</h2>
+          <p className="muted">
+            Finds every Bitcoin wave of at least $50 (and bigger sizes, for comparison) minute by minute. Shows what you would make with
+            perfect timing, and what a bot that buys once the price has turned up by the wave size, and sells once it has turned down by
+            the wave size, would really make after fees.
+          </p>
+          <WaveBacktestForm />
+        </div>
         <div className="card">
           <h2>Test the Breakout day-trader on past prices</h2>
           <p className="muted">

@@ -177,6 +177,19 @@ Realistic expectation: **+15% to +35% a year**. Details: [`docs/research/ethereu
 Choose what share of the Bybit balance it may use (25/50/75%, default 50%). When both bots use real money,
 Bitcoin uses the rest. Your API key needs the same **Contract → Orders and Positions** permission (nothing new).
 
+### Wave test (buy every low, sell every high)
+
+On the **Backtest** page, the **Wave test** finds every Bitcoin wave of at least $50 (and $100, $200 … $2,000 for comparison),
+minute by minute, and shows two numbers for each size, per 1 BTC:
+
+- **Perfect timing:** buying the exact bottom and selling the exact top of every wave. Only possible looking back; this is the ceiling.
+- **Real bot:** a bot can only know a bottom was the bottom once the price has already risen $50 from it, so it buys $50 above
+  each bottom and sells $50 below each top. That costs $100 of every wave, and waves smaller than $100 lose money.
+
+Fees matter a lot here: Bybit charges about 0.055% each time you buy or sell, which is about **$55 per 1 BTC at $100k, or ~$110+
+for a buy and a sell**. That is more than a whole $50 wave. The test shows these numbers with and without fees.
+This is a test only; the live bot does not trade waves.
+
 ### If something goes wrong
 
 - **"Bybit refused the connection from this server's location":** Bybit blocks some countries, such as the USA. This project runs from Frankfurt (`fra1`). In GitHub, edit [`vercel.json`](vercel.json) and change `fra1` to another region such as `dub1` (Dublin) or `cpt1` (Cape Town). Commit, and Vercel redeploys automatically.

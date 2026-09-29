@@ -261,6 +261,21 @@ export async function getFuturesHistory(symbol: string, days: number): Promise<C
   return out.slice(-total);
 }
 
+// 1-minute futures candles for the last `days` days, oldest first.
+// Downloads 1000-minute windows, several at a time.
+export async function getFuturesMinutes(symbol: string, days: number): Promise<Candle[]> {
+  const MIN = 60_000;
+  const now = Math.floor(Date.now() / MIN) * MIN;
+  const ends: number[] = [];
+  for (let end = now - MIN; end > now - days * 86_400_000; end -= 1000 * MIN) ends.push(end);
+  const byTime = new Map<number, Candle>();
+  for (let i = 0; i < ends.length; i += 8) {
+    const batches = await Promise.all(ends.slice(i, i + 8).map((end) => getKlines(symbol, "1", 1000, end, "linear")));
+    for (const k of batches.flat()) byTime.set(k.t, k);
+  }
+  return [...byTime.values()].filter((k) => k.t < now && k.t >= now - days * 86_400_000).sort((a, b) => a.t - b.t);
+}
+
 export async function getFuturesPrice(symbol: string): Promise<number> {
   const r = await publicGet<{ list: { lastPrice: string }[] }>("/v5/market/tickers", { category: "linear", symbol });
   return +r.list[0].lastPrice;

@@ -4,13 +4,14 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { SESSION_COOKIE, requireAuth, safeEqual, sessionToken } from "@/lib/auth";
 import { runTick, type TickReport } from "@/lib/bot";
-import { getFuturesHistory, getFuturesPosition, getHistory, getWallet } from "@/lib/bybit";
+import { getFuturesHistory, getFuturesMinutes, getFuturesPosition, getHistory, getWallet } from "@/lib/bybit";
 import { HISTORY_DAYS, backtestBreakout, type BreakoutBacktest } from "@/lib/breakout/strategy";
 import { ETH_HISTORY_DAYS, backtestEth } from "@/lib/eth/strategy";
 import { db, getSettings, logEvent, updateSettings } from "@/lib/db";
 import { backtest, type BacktestResult } from "@/lib/engine/backtest";
 import { getProfile } from "@/lib/engine/profiles";
 import { getFearGreedHistory } from "@/lib/sentiment";
+import { waveReport, type WaveReport } from "@/lib/wave/strategy";
 import { findLatestChatId, sendTelegram } from "@/lib/telegram";
 
 const back = (path: string, msg: string): never => redirect(`${path}?msg=${encodeURIComponent(msg)}`);
@@ -281,6 +282,19 @@ export async function runBreakoutBacktest(_prev: BreakoutBacktestState, form: Fo
     const from = Date.now() - days * 86_400_000;
     const result = backtestBreakout(hourly, { profile, startBalance: balance, minNotional: 90, from });
     return { days, result: { ...result, trades: result.trades.slice(-30).reverse() } };
+  } catch (e) {
+    return { error: (e as Error).message };
+  }
+}
+
+export type WaveBacktestState = { error?: string; days?: number; result?: WaveReport } | null;
+
+export async function runWaveBacktest(_prev: WaveBacktestState, form: FormData): Promise<WaveBacktestState> {
+  await requireAuth();
+  const days = Math.min(90, Math.max(1, Number(form.get("days")) || 30));
+  try {
+    const minutes = await getFuturesMinutes("BTCUSDT", days);
+    return { days, result: waveReport(minutes.map((k) => ({ t: k.t, p: k.c }))) };
   } catch (e) {
     return { error: (e as Error).message };
   }
