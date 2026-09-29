@@ -113,3 +113,30 @@ highest point, fees included), long only:
 
 Conclusion: bigger waves make the real bot less bad, and a 9-15% "trend follower" can reduce the
 damage of big crashes, but nothing found makes *significantly* more than holding reliably.
+
+## What big (9-15%) turns have in common (`longfeat.py`, `bigcommon.py`, `bigcheck.py`)
+
+About 30 longer-term indicators added (days/weeks: 7-200 day averages, daily/weekly RSI, 3-90 day
+moves, distance from all-time high, days since the 30-day high/low, 7-30 day volatility and
+volume, daily MACD, 6 new invented ones). Perfect turns pooled from 9%, 12% and 15% waves
+(12%: 31 buys in 2017-20, 35 in 2021-23). Values are medians at 12% turns.
+
+**Common to both big buys and big sells:** heavy volume (2.1x weekly normal at buys, 1.5x at sells,
+vs 0.8x), more trades, wide Bollinger bands, choppy prices (hourly ATR 1.8% / 1.2% vs 0.8%),
+choppy last 7-30 days, bigger trades, and they come about a week after the previous turn.
+
+**Big buy:** RSI(14) 27 (normal 51), Stochastic 10, fell 7.4% in 24h and 10.8% in 3 days, 17% below
+the 7-day high, 6% below the 50-hour average, ADX 39 (a strong, fast fall). Mirror for big sells:
+RSI 71, Stochastic 92, +5.5% in 24h, at the top of the week's range.
+
+**Short-term (hours) indicators separate big turns better than long-term ones.** No link: weekly
+RSI, 200-day average and its slope, golden cross, distance from all-time high, hour, weekday,
+round numbers, RSI divergence.
+
+**How often the signs are right (8-sign checklists):**
+- Buy, 7+ signs: the day is within ±1 day of a big bottom 33% (2017-20) / 49% (2021-23) of the
+  time, vs 6% for any day. But the price 7 days later: -1.6% / +1.3% (any hour: +1.0%). So the
+  signs point at the right area, yet buying on them was not reliably profitable.
+- Sell, 7+ signs: within ±1 day of a big top only ~20% of the time, and the price 7 days later was
+  +3.2% / +3.4%, **higher** than a normal week. Big tops look like ordinary strong rallies, and
+  those usually keep going. Selling on "top signs" loses money.
