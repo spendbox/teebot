@@ -79,3 +79,37 @@ Gradient-boosted model, trained on 2017-2020, tested on 2021-2023 (never seen):
 Conclusion: the signs of a perfect buy/sell are clear and consistent, but they also appear at
 many hours that are not turning points. No combination found picks turning points "every time";
 the only lasting edge is small (buying hard, high-volume sell-offs).
+
+## Bigger waves (5% to 40%) — can they beat holding by a lot? (`big.py`, `big2.py`, `walkbig.py`)
+
+Holding Bitcoin: Aug 2017-Jan 2024 x10.25 (worst dip 84%); 2018-2023 x3.27; 2021-2023 x1.52.
+
+**Perfect timing** beats holding by absurd amounts at every size (e.g. 20% waves: x33.6 million
+long-only over the whole period; 30% waves in 2021-23: x10.5). Only possible with hindsight.
+
+**Real bot** (buys once the price is X% above its lowest point, sells once it is X% below its
+highest point, fees included), long only:
+
+| Wave | Whole period | 2018-2023 | 2021-2023 | Worst dip (whole) |
+|---|---|---|---|---|
+| holding | x10.25 | x3.27 | x1.52 | 84% |
+| 5% | x0.35 | | x0.53 | 95% |
+| 8% | x10.03 | x4.14 | x1.46 | 81% |
+| 9% | x14.67 | x5.03 | x1.36 | 72% |
+| **10%** | **x36.10** | **x11.02** | x1.68 | 63% |
+| 11% | x14.01 | x4.73 | x1.14 | 68% |
+| 12% | x11.24 | x4.28 | x1.17 | 68% |
+| 15% | x13.76 | x3.83 | x0.90 | 67% |
+| 20% | x5.61 | x3.01 | x0.67 | 74% |
+
+- 10% is a lucky spike: 9% and 11% make less than half as much. The realistic range (9-17%)
+  beats holding modestly over the whole period (about x13-15 vs x10) with smaller crashes,
+  mostly by getting out during the 2018 and 2022 crashes.
+- In 2021-2023 most sizes did **worse** than holding. In strong up-years (2019, 2020, 2023)
+  it trails holding, because every exit and re-entry costs 2 x the wave size.
+- Adding short selling made it worse in most cases.
+- The prediction model aimed at 10-20% turns (trained only on earlier years, 2019-2023): x0.7 to
+  x2.6 vs holding x11.3.
+
+Conclusion: bigger waves make the real bot less bad, and a 9-15% "trend follower" can reduce the
+damage of big crashes, but nothing found makes *significantly* more than holding reliably.
