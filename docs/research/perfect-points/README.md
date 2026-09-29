@@ -211,3 +211,26 @@ completed days only); no repainting indicators; fees + slippage + funding applie
 trigger price (fine for a stop order; the live bot checks every minute so real fills can be a bit
 worse); a 5% stop hit inside the entry hour is not checked (small optimistic bias); ~10 parameters
 learned on 2017-20; 2021-23 test has bull and bear; UTC days, incomplete days dropped.
+
+## Perfect bots on yearly, weekly and daily timeframes (`perfect.py`, `tf*.py`, `yearly.py`)
+
+Perfect long-only trades found with dynamic programming on daily and weekly closes (fees
+included): daily 599 buys/sells (avg hold 3 days), weekly 83. Best-trade-per-year: 7 trades.
+$100 (Aug 2017-Jan 2024): one perfect trade $2,348; best trade per year $367,033; every weekly
+move $70 million; every daily move ~10^15; every hourly move ~10^54 (holding: $1,025).
+
+**Daily and weekly perfect buys** come right after a red bar: RSI(2) ~25 (normal 52), price 1-4%
+below its 7-bar average, a down move on the bar (-1.5% day / -4.8% week), close near the bar's
+low. Sells mirror it (RSI(2) ~75-78, green bar). Volume, ATR, time of year, weekday and round
+numbers: no difference. Each ~80% sign is also true on 33-55% of all bars, so a bar with the
+buy sign is a perfect buy only 25-28% of the time (vs 12% for any bar). Trading "buy on RSI(2)
+low + red bar, sell on RSI(2) high + green bar": $61-$130 (2017-20) and $56-$115 (2021-23) vs
+holding $253 / $134-151.
+
+**Best trade of each year (genuine lows/highs, not the 1 January artifacts):**
+buys (Feb 2018, Jan 2019, Mar 2020, Jan 2022): daily RSI(14) 26-37, weekly RSI 35-48, 25-61%
+below the 90-day high, 24-40% below the 200-day average (when available), volume 1.0-4.5x.
+Sells (Dec 2017, Jun 2019, Dec 2020, Nov 2021, Dec 2023): daily RSI 59-88, weekly RSI 67-92,
+within 1-6% of the 90-day high, 30-day move +13% to +145%, 42-152% above the 200-day average.
+Invented "days since halving": the two cycle tops came 526 and 548 days after a halving, but
+two examples cannot be tested.
