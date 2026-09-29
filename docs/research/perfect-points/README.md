@@ -140,3 +140,45 @@ round numbers, RSI divergence.
 - Sell, 7+ signs: within ±1 day of a big top only ~20% of the time, and the price 7 days later was
   +3.2% / +3.4%, **higher** than a normal week. Big tops look like ordinary strong rallies, and
   those usually keep going. Selling on "top signs" loses money.
+
+## Long vs short, and what is present at 70-90% of perfect points (`coverage.py`, `longshort.py`, `robust.py`)
+
+For every indicator, the level that was true at 70/80/90% of perfect points in 2017-20, then
+checked on 2021-23, with how often it is also true at any hour ("false alarm").
+
+3% turns, 80% level: long = 4h move <= -1.1%, 1.4%+ below 20h avg, RSI(2) <= 13, Stochastic <= 23
+(each true at 76-86% of perfect longs, but also at 13-16% of all hours). Short = RSI(2) >= 85,
+1.2%+ above 20h avg, Stochastic >= 81, 4h move >= +0.7% (77-85% of perfect shorts, 16-19% of hours).
+
+12% turns (the five signs per side used below):
+
+| Long sign | At perfect longs 17-20 / 21-23 | Any hour |
+|---|---|---|
+| bottom 8% of 3-day range | 81% / 71% | 3% |
+| Keltner position <= -0.95 | 77% / 80% | 6% |
+| 3.9%+ below 50h average | 84% / 86% | 6% |
+| RSI(14) <= 32 | 81% / 80% | 7% |
+| 2.3%+ below 24h VWAP | 77% / 86% | 7% |
+| 3+ of 5 | 84% / 91% | 4.8% |
+
+| Short sign | At perfect shorts 17-20 / 21-23 | Any hour |
+|---|---|---|
+| top 8% of 3-day range | 80% / 74% | 6% |
+| top 12% of 1-day range | 73% / 83% | 9% |
+| RSI(14) >= 67 | 80% / 69% | 9% |
+| Keltner position >= 0.79 | 80% / 77% | 10% |
+| 1.9%+ above 24h VWAP | 80% / 77% | 10% |
+| 3+ of 5 | 80% / 80% | 8.2% |
+
+Present at 70-90% of BOTH longs and shorts: volume at least 0.8-0.9x the weekly normal (91-97%,
+but true at 43-53% of all hours) and hourly ATR above ~0.9-1.1% (77-86%, true at 31-48% of hours).
+
+Trading them (fees included; holding $100 -> $256 in 2017-20, $152 in 2021-23):
+- Long on all 5 signs, sell 12% below the best price: $243 / $240. With 10%: $634 / $106;
+  15%: $357 / $136. Year by year 2018-23: x3.73 vs holding x3.10, but same ~70% worst dip, and
+  neighbouring settings range x1.4-x3.7. Not a dependable edge.
+- Every short version lost most of the money ($4-$41 from $100): after short signs Bitcoin
+  usually keeps rising.
+
+Interactive chart of these signs vs the perfect points: published as the "Long and Short Signs"
+artifact.
