@@ -249,3 +249,26 @@ what separates the real perfect points from the rest? Separation 0.50 = nothing.
   Part of this is built into the definition (a 12% bottom needs a big fall before it).
   Trading "4+ signs and 10/15/20% below the 7-day high": results swing between $56 and $313 per
   $100 across settings and periods, not reliably better than holding ($214 / $146).
+
+## 31 invented indicators (`invent.py`, `invtest.py`, `invtrade.py`)
+
+Absorption, stopping volume, buying climax, liquidation cascade, short squeeze, retail panic,
+whale trade size, seller/buyer exhaustion (flow divergence; the two turned out identical),
+fall/rise deceleration, volatility squeeze percentile, efficiency ratio, variance ratio,
+return autocorrelation, up/down volume, double bottom/top, anchored VWAP gap (from the 7-day high),
+weekend, return kurtosis, downside-volatility share, hours since a volume spike, 3-red-then-green
+and mirror, acceleration, retail-vs-whale activity, buyer/seller streaks, multi-timeframe
+stretch, panic score and euphoria score. All use only data up to the current hour.
+
+- Present at perfect points (3% and 12% turns, consistent 2017-20 and 2021-23): liquidation
+  cascade and panic score at buys (0.89-0.93), short squeeze and euphoria score at sells
+  (0.83-0.91), anchored VWAP gap (price far below the volume-weighted price since the 7-day high:
+  0.04-0.16 at big buys).
+- Versus look-alikes almost all are 0.45-0.55. Best: fall deceleration (0.58/0.61 at 3% buys,
+  0.49/0.65 at 12%), whale trade size (0.55/0.61), anchored VWAP gap at 12% buys (0.25/0.20).
+- Trading each alone (top/bottom 5%, enter next hour, sell after 24h, fees): none beat holding;
+  the panic/liquidation indicators lost the most ($33-$88).
+- Combined "turn score" (average rank of fall deceleration, whale size, seller exhaustion,
+  low retail-vs-whale activity, low kurtosis), top 5%, hold 24h: $189 (2017-20, holding $720)
+  and $177 (2021-23, holding $146), in the market ~28% of the time. The five were chosen after
+  looking at both periods, so 2021-23 is NOT a clean test; it needs unseen 2024-2026 data.
