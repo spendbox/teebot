@@ -234,3 +234,18 @@ Sells (Dec 2017, Jun 2019, Dec 2020, Nov 2021, Dec 2023): daily RSI 59-88, weekl
 within 1-6% of the 90-day high, 30-day move +13% to +145%, 42-152% above the 200-day average.
 Invented "days since halving": the two cycle tops came 526 and 548 days after a halving, but
 two examples cannot be tested.
+
+## Perfect points vs look-alikes (`lookalike.py`, `deepfall.py`)
+
+Among bars that showed the same signs (red + oversold for buys, green + overbought for sells),
+what separates the real perfect points from the rest? Separation 0.50 = nothing.
+- Daily: 639 buy look-alikes (26% real), 713 sell look-alikes (52% real). Best single indicator
+  0.44-0.56; all indicators together, trained 2017-20 and tested 2021-23: 0.51 (buys), 0.47 (sells).
+  Nothing known at the time tells them apart.
+- Weekly: 90 buy / 115 sell look-alikes; best single indicator 0.41-0.61, not consistent.
+- Hourly 12% turns: real bottoms came after deeper, more volatile falls (15.7% vs 11.6% below the
+  7-day high, 25% vs 18% below the 30-day high); real tops after bigger rises (+20% vs +12% above
+  the 7-day low) on higher 7-day volume. All indicators together: 0.83 (buys), 0.69 (sells).
+  Part of this is built into the definition (a 12% bottom needs a big fall before it).
+  Trading "4+ signs and 10/15/20% below the 7-day high": results swing between $56 and $313 per
+  $100 across settings and periods, not reliably better than holding ($214 / $146).
