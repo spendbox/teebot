@@ -62,3 +62,24 @@ Score 6 is not meaningfully better per trade than score 5, and score 7 happened 
 ## Exit reasons
 End of day: 105 trades, 68% won, +4.25% avg. Weak-volume exit: 21 trades, 14% won, -0.70% avg
 (cuts bad trades early). 5% stop: 6 trades, -14.8% avg.
+
+## Unseen year: 2024 (`run2024.ts`)
+
+Binance BTCUSDT hourly prices for 2024 from the `seda-backtester` PyPI package
+(`sample_data/BTCUSDT_1h.csv`; matches the 2017-2024 file exactly on the overlapping hours),
+appended to the earlier data as `h1_2017_2024.csv` (columns date, open, high, low, close, volume).
+
+| 2024 | $100 became | Worst dip | Trades | Won |
+|---|---|---|---|---|
+| Live settings (2x/4x/5x) | $236 | 21% | 33 | 58% |
+| Safer (2x/3x/3x) | $193 | 22% | 33 | 58% |
+| Holding Bitcoin | $221 | | | |
+
+By score (live): 5 -> 22 trades avg +0.6%; 6 -> 10 trades avg +7.1%; 7 -> 1 trade +12.1%.
+By month: Jan +7%, Feb +48%, Mar +25%, Apr +5%, May -7%, Jun -2%, Jul -7%, Sep -5%,
+Oct +9%, Nov +45%, Dec -10%.
+
+Invented "turn score" on 2024 (only 2 of its 5 indicators can be computed: this file has no trade
+counts or taker volume; levels frozen from 2017-20; buy next hour, sell 24h later):
+fall deceleration $135, calm market $118, 2-indicator score $134 (77 trades) vs holding $220.
+Earlier periods for the 2-indicator score: $68 (2017-20), $148 (2021-23). Not a dependable edge.
